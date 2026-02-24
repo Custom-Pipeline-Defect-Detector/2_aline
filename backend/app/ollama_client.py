@@ -49,7 +49,7 @@ def _chat(messages, temperature=0.2):
         "stream": False,
         "options": {"temperature": temperature},
     }
-    r = requests.post(url, json=payload, timeout=180)
+    r = requests.post(url, json=payload)
     r.raise_for_status()
     return r.json()["message"]["content"]
 
