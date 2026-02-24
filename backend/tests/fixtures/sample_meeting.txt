@@ -1,0 +1,6 @@
+Meeting Minutes
+Customer: Nanjing Aline Automation Company
+Project Code: AL-001
+Action: Prepare wiring diagram by next week.
+Issue: Motor overheating during test.
+NCR: Paint defect on panel.

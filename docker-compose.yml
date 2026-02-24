@@ -1,0 +1,114 @@
+services:
+  postgres:
+    image: postgres:16
+    container_name: aline_postgres
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-aline}
+      POSTGRES_USER: ${POSTGRES_USER:-aline}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-alinepass}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-aline} -d ${POSTGRES_DB:-aline}"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  redis:
+    image: redis:7
+    container_name: aline_redis
+    command: ["redis-server", "--appendonly", "yes"]
+    volumes:
+      - redisdata:/data
+
+  backend:
+    build: ./backend
+    container_name: aline_backend
+    env_file: .env
+    environment:
+      DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-aline}:${POSTGRES_PASSWORD:-alinepass}@postgres:5432/${POSTGRES_DB:-aline}
+
+      # Redis / Celery (IMPORTANT)
+      REDIS_URL: redis://redis:6379/0
+      CELERY_BROKER_URL: redis://redis:6379/0
+      CELERY_RESULT_BACKEND: redis://redis:6379/0
+
+      # Ollama
+      OLLAMA_BASE_URL: ${OLLAMA_BASE_URL:-http://host.docker.internal:11434}
+      OLLAMA_MODEL: ${OLLAMA_MODEL:-qwen2.5:7b-instruct}
+
+      FILE_STORAGE_ROOT: /storage
+      JWT_SECRET: ${JWT_SECRET:-change_me}
+      API_KEY_INTERNAL: internal_watcher_key_change_me
+
+    volumes:
+      - "${WATCH_PATH:-C:\\AlineInbox}:/watch:rw"
+      - "${FILE_STORAGE_ROOT:-C:\\AlineStorage}:/storage:rw"
+
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_started
+
+    ports:
+      - "8000:8000"
+
+  worker:
+    build: ./backend
+    container_name: aline_worker
+    env_file: .env
+    command: ["celery", "-A", "app.celery_app:celery", "worker", "--loglevel=INFO", "-Q", "default"]
+
+    environment:
+      DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-aline}:${POSTGRES_PASSWORD:-alinepass}@postgres:5432/${POSTGRES_DB:-aline}
+
+      # Redis / Celery (IMPORTANT)
+      REDIS_URL: redis://redis:6379/0
+      CELERY_BROKER_URL: redis://redis:6379/0
+      CELERY_RESULT_BACKEND: redis://redis:6379/0
+
+      # Ollama
+      OLLAMA_BASE_URL: ${OLLAMA_BASE_URL:-http://host.docker.internal:11434}
+      OLLAMA_MODEL: ${OLLAMA_MODEL:-qwen2.5:7b-instruct}
+
+      FILE_STORAGE_ROOT: /storage
+      JWT_SECRET: ${JWT_SECRET:-change_me}
+      API_KEY_INTERNAL: internal_watcher_key_change_me
+
+    volumes:
+      - "${WATCH_PATH:-C:\\AlineInbox}:/watch:rw"
+      - "${FILE_STORAGE_ROOT:-C:\\AlineStorage}:/storage:rw"
+
+    depends_on:
+      backend:
+        condition: service_started
+      redis:
+        condition: service_started
+
+  watcher:
+    build: ./watcher
+    container_name: aline_watcher
+    env_file: .env
+    environment:
+      WATCH_PATH: ${WATCH_PATH:-C:\\AlineInbox}
+      API_BASE_URL: http://backend:8000
+      API_KEY_INTERNAL: internal_watcher_key_change_me
+    volumes:
+      - "${WATCH_PATH:-C:\\AlineInbox}:/watch:rw"
+    depends_on:
+      backend:
+        condition: service_started
+
+  frontend:
+    build: ./frontend
+    container_name: aline_frontend
+    ports:
+      - "${WEB_PORT:-9876}:80"
+    depends_on:
+      backend:
+        condition: service_started
+
+volumes:
+  pgdata:
+  redisdata:
