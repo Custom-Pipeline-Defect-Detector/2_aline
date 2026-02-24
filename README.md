@@ -36,7 +36,7 @@ Open:
 | `DATABASE_URL` | `postgresql+psycopg2://aline:aline@postgres:5432/aline` | DB connection |
 | `FILE_STORAGE_ROOT` | `/data/aline_docs` | Document storage |
 | `OLLAMA_BASE_URL` | `http://host.docker.internal:11434` | Ollama endpoint |
-| `OLLAMA_MODEL` | `qwen2.5:7b-instruct` | Model name |
+| `OLLAMA_MODEL` | `gpt-oss:20b` | Model name |
 | `WATCH_PATHS` | `/data/aline_docs` | Watcher paths |
 | `CELERY_BROKER_URL` | `redis://redis:6379/0` | Celery broker |
 
