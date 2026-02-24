@@ -205,7 +205,7 @@ function BottomNavItem({ to, icon, label }: { to: string; icon: string; label: s
 export default function AppShell() {
   const navigate = useNavigate()
   const location = useLocation()
-  const { hasRole, logout } = useAuth()
+  const { hasRole, logout, user } = useAuth()
 
   const [mobileOpen, setMobileOpen] = React.useState(false)
 
@@ -371,7 +371,7 @@ export default function AppShell() {
 
                 <div className="flex items-center gap-2">
                   <div className="hidden rounded-full bg-slate-100 px-3 py-1 text-xs font-medium text-slate-600 md:block">
-                    User
+                    {user?.name || user?.email || 'User'}
                   </div>
 
                   <button
