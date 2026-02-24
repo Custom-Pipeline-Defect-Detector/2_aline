@@ -72,7 +72,7 @@ def _call_ollama(prompt: str, model: str) -> Dict[str, Any]:
         "stream": False,
         "options": {"temperature": 0.2},
     }
-    with httpx.Client(timeout=180.0) as client:
+    with httpx.Client(timeout=None) as client:
         response = client.post(f"{settings.ollama_base_url}/api/generate", json=payload)
         response.raise_for_status()
         data = response.json()
