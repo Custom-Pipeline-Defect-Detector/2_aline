@@ -90,7 +90,7 @@ def upgrade() -> None:
         "agent_runs",
         sa.Column("id", sa.Integer(), primary_key=True),
         sa.Column("document_id", sa.Integer(), sa.ForeignKey("documents.id", ondelete="CASCADE"), nullable=False),
-        sa.Column("model", sa.String(), nullable=False, server_default="gpt-oss:20b"),
+        sa.Column("model", sa.String(), nullable=False, server_default="qwen2.5-coder:7b"),
         sa.Column("prompt_version", sa.String(), nullable=False, server_default="v1"),
         sa.Column("started_at", sa.DateTime(timezone=True), server_default=sa.func.now()),
         sa.Column("ended_at", sa.DateTime(timezone=True), nullable=True),

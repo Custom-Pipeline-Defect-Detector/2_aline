@@ -19,6 +19,6 @@ JWT_EXPIRE_MINUTES = int(os.getenv("JWT_EXPIRE_MINUTES", "480"))
 FILE_STORAGE_ROOT = env("FILE_STORAGE_ROOT", "/storage")
 
 OLLAMA_BASE_URL = env("OLLAMA_BASE_URL", "http://localhost:11434")
-OLLAMA_MODEL = env("OLLAMA_MODEL", "gpt-oss:20b")
+OLLAMA_MODEL = env("OLLAMA_MODEL", "qwen2.5-coder:7b")
 
 INTERNAL_WATCHER_API_KEY = env("API_KEY_INTERNAL", "internal_watcher_key_change_me")

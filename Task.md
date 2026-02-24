@@ -69,7 +69,7 @@ Build a complete internal company app (automation/engineering company) with:
 5) Agentic Ollama document automation:
    - whenever any document is uploaded, it is automatically processed in the background
    - local extraction is performed
-   - gpt-oss:20b (tool-capable) classifies document type + extracts fields
+   - qwen2.5-coder:7b (tool-capable) classifies document type + extracts fields
    - the model uses tools to update the database (link docs, update customers/projects/proposals/tasks/notifications)
    - fully local/offline, docker-only
 
@@ -158,7 +158,7 @@ A) DATABASE MODELS (edit /mnt/data/models.py)
 8) Add AgentRun model/table:
    - id pk
    - document_id fk -> documents.id
-   - model string (default "gpt-oss:20b")
+   - model string (default "qwen2.5-coder:7b")
    - prompt_version string
    - started_at datetime
    - ended_at datetime nullable
@@ -279,7 +279,7 @@ So dashboards look populated.
 AGENTIC OLLAMA DOCUMENT AUTOMATION (CORE FEATURE)
 ====================================================
 
-We use local Ollama and gpt-oss:20b. The model can call tools.
+We use local Ollama and qwen2.5-coder:7b. The model can call tools.
 
 Document taxonomy (fixed set):
 - contract
@@ -297,7 +297,7 @@ Document taxonomy (fixed set):
 Behavior:
 - When any document is uploaded:
   1) extract text locally via extraction.py
-  2) run an agent loop with gpt-oss:20b
+  2) run an agent loop with qwen2.5-coder:7b
   3) agent classifies doc_type, extracts fields into JSON, and decides which DB updates to make
   4) agent may call allowlisted tools only
   5) apply safe automation:
@@ -323,7 +323,7 @@ Required tools:
 
 Agent loop:
 Create /mnt/data/doc_agent.py with:
-- run_document_agent(document_id, model="gpt-oss:20b", prompt_version="v1")
+- run_document_agent(document_id, model="qwen2.5-coder:7b", prompt_version="v1")
 - builds a system prompt that:
   - describes taxonomy
   - instructs the model to always call tools to perform actions

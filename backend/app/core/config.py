@@ -8,7 +8,7 @@ class Settings(BaseSettings):
     access_token_expire_minutes: int = 60 * 8
     file_storage_root: str = "/data/aline_docs"
     ollama_base_url: str = "http://localhost:11434"
-    ollama_model: str = "gpt-oss:20b"
+    ollama_model: str = "qwen2.5-coder:7b"
     celery_broker_url: str = "redis://localhost:6379/0"
     celery_result_backend: str = "redis://localhost:6379/0"
     run_tasks_inline: bool = True

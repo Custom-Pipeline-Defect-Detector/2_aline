@@ -87,7 +87,7 @@ def _tool_manifest() -> str:
     return "\n".join(lines)
 
 
-def run_document_agent(document_id: int, model: str = "gpt-oss:20b", prompt_version: str = "v1") -> None:
+def run_document_agent(document_id: int, model: str = "qwen2.5-coder:7b", prompt_version: str = "v1") -> None:
     db: Session = SessionLocal()
     agent_run = None
     document = None

@@ -303,7 +303,7 @@ class AgentRun(Base):
     __tablename__ = "agent_runs"
     id = Column(Integer, primary_key=True)
     document_id = Column(Integer, ForeignKey("documents.id", ondelete="CASCADE"), nullable=False)
-    model = Column(String, nullable=False, default="gpt-oss:20b")
+    model = Column(String, nullable=False, default="qwen2.5-coder:7b")
     prompt_version = Column(String, nullable=False, default="v1")
     started_at = Column(DateTime(timezone=True), server_default=func.now())
     ended_at = Column(DateTime(timezone=True), nullable=True)
