@@ -42,6 +42,17 @@ function cx(...classes: Array<string | false | undefined | null>) {
   return classes.filter(Boolean).join(' ')
 }
 
+
+function getLowConfidenceFields(extractedFields?: Record<string, any>): string[] {
+  if (!extractedFields || typeof extractedFields !== 'object') return []
+  const confidence = extractedFields?._confidence
+  if (!confidence || typeof confidence !== 'object') return []
+
+  return Object.entries(confidence)
+    .filter(([, value]) => typeof value === 'number' && value < 0.6)
+    .map(([key]) => key)
+}
+
 function statusVariant(status: string) {
   if (status === 'failed') return 'danger'
   if (status === 'processing' || status === 'queued') return 'warning'
@@ -281,15 +292,15 @@ export default function DocumentsPage() {
             {documents.map((doc) => (
               <Fragment key={doc.id}>
                 <TableRow className={expanded === doc.id ? 'bg-slate-50' : ''}>
-                  <TableCell className="font-medium">{doc.filename}</TableCell>
+                  <TableCell className="font-medium">{doc?.filename ?? 'Not Available'}</TableCell>
 
                   <TableCell>
-                    <Badge variant="default">{doc.document_type ?? 'pending'}</Badge>
+                    <Badge variant="default">{doc?.document_type ?? 'pending'}</Badge>
                   </TableCell>
 
                   <TableCell>
                     <Badge variant={statusVariant(doc.processing_status)}>
-                      {doc.processing_status === 'processing' ? 'Processing…' : doc.processing_status}
+                      {doc?.processing_status === 'processing' ? 'Processing…' : doc?.processing_status ?? 'unknown'}
                     </Badge>
                     {doc.needs_review ? (
                       <Badge className="ml-2" variant="danger">
@@ -298,7 +309,7 @@ export default function DocumentsPage() {
                     ) : null}
                   </TableCell>
 
-                  <TableCell>{new Date(doc.created_at).toLocaleString()}</TableCell>
+                  <TableCell>{doc?.created_at ? new Date(doc.created_at).toLocaleString() : 'Not Available'}</TableCell>
 
                   <TableCell className="space-x-2">
                     <Button
@@ -409,6 +420,12 @@ export default function DocumentsPage() {
                               Tip: keep valid JSON. Use Validate if unsure.
                             </div>
                           )}
+
+                          {getLowConfidenceFields(doc?.extracted_fields).length > 0 ? (
+                            <div className="mt-2 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-700">
+                              Low confidence fields: {getLowConfidenceFields(doc?.extracted_fields).join(', ')}
+                            </div>
+                          ) : null}
                         </Card>
 
                         {/* Metadata */}

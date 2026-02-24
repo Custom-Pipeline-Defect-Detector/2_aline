@@ -1,8 +1,10 @@
 import json
 from typing import Any, Dict
+
 import httpx
+
 from app.core.config import settings
-from app.core.prompts import ROUTER_PROMPT, EXTRACTOR_PROMPT
+from app.core.prompts import EXTRACTOR_PROMPT, ROUTER_PROMPT
 
 
 def _parse_json(text: str) -> Dict[str, Any]:
@@ -16,10 +18,10 @@ def _parse_json(text: str) -> Dict[str, Any]:
         raise
 
 
-def _call_ollama(prompt: str, content: str) -> Dict[str, Any]:
+def call_ollama(prompt: str) -> str:
     payload = {
         "model": settings.ollama_model,
-        "prompt": f"{prompt}\nCONTENT:\n{content}\nJSON:",
+        "prompt": prompt,
         "stream": False,
         "options": {"temperature": 0.2},
     }
@@ -27,18 +29,17 @@ def _call_ollama(prompt: str, content: str) -> Dict[str, Any]:
         response = client.post(f"{settings.ollama_base_url}/api/generate", json=payload)
         response.raise_for_status()
         data = response.json()
-        output = data.get("response", "")
+    return data.get("response", "")
+
+
+def _call_ollama(prompt: str, content: str) -> Dict[str, Any]:
+    output = call_ollama(f"{prompt}\nCONTENT:\n{content}\nJSON:")
     try:
         return _parse_json(output)
     except json.JSONDecodeError:
-        correction_prompt = "Return valid JSON only. Fix formatting issues."
-        payload["prompt"] = f"{correction_prompt}\n{prompt}\nCONTENT:\n{content}\nJSON:"
-        with httpx.Client(timeout=120.0) as client:
-            retry = client.post(f"{settings.ollama_base_url}/api/generate", json=payload)
-            retry.raise_for_status()
-            data = retry.json()
-            output = data.get("response", "")
-        return _parse_json(output)
+        correction_prompt = f"Return valid JSON only. Fix formatting issues.\n{prompt}\nCONTENT:\n{content}\nJSON:"
+        retry_output = call_ollama(correction_prompt)
+        return _parse_json(retry_output)
 
 
 def route_document(content: str) -> Dict[str, Any]:
