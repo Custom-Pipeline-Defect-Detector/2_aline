@@ -25,3 +25,4 @@ psycopg[binary]
 
 requests==2.32.3
 PyJWT==2.9.0
+jsonschema==4.23.0
