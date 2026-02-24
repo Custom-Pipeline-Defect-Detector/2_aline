@@ -163,30 +163,7 @@ def run_document_agent(document_id: int, model: str = "qwen2.5-coder:7b", prompt
             },
         )
 
-        needs_review = confidence is None or confidence < 0.75 or not extracted_fields
-        if needs_review:
-            reason = final_result.get("needs_review_reason") or "Low confidence or missing required fields."
-            role = "Sales" if document_type in {"proposal", "contract", "invoice", "purchase_order", "sow_statement_of_work"} else "Admin"
-            run_tool(
-                "create_notification",
-                {
-                    "message": f"Document {document.filename} needs review: {reason}",
-                    "role": role,
-                    "entity_table": "documents",
-                    "entity_id": document.id,
-                    "type": "needs_review",
-                },
-            )
-            if document.project_id:
-                run_tool(
-                    "create_task",
-                    {
-                        "project_id": document.project_id,
-                        "title": f"Review document {document.filename}",
-                        "priority": "high",
-                        "type": "doc",
-                    },
-                )
+        needs_review = False
 
         run_tool(
             "append_audit_event",

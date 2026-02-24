@@ -73,15 +73,15 @@ class DocumentProcessingStatusOut(BaseModel):
 
 
 class DocumentUpdate(BaseModel):
-    document_type: Optional[str]
-    classification_confidence: Optional[float]
-    extracted_fields: Optional[Dict[str, Any]]
-    agent_summary: Optional[str]
-    needs_review: Optional[bool]
-    processing_status: Optional[str]
-    processing_error: Optional[str]
-    customer_id: Optional[int]
-    project_id: Optional[int]
+    document_type: Optional[str] = None
+    classification_confidence: Optional[float] = None
+    extracted_fields: Optional[Dict[str, Any]] = None
+    agent_summary: Optional[str] = None
+    needs_review: Optional[bool] = None
+    processing_status: Optional[str] = None
+    processing_error: Optional[str] = None
+    customer_id: Optional[int] = None
+    project_id: Optional[int] = None
 
 
 class DocumentVersionOut(BaseModel):
@@ -251,9 +251,9 @@ class CustomerBase(BaseModel):
     name: str
     aliases: List[str] = []
     status: Optional[str] = "lead"
-    industry: Optional[str]
-    owner_id: Optional[int]
-    notes: Optional[str]
+    industry: Optional[str] = None
+    owner_id: Optional[int] = None
+    notes: Optional[str] = None
     tags: List[str] = []
 
 
@@ -262,13 +262,13 @@ class CustomerCreate(CustomerBase):
 
 
 class CustomerUpdate(BaseModel):
-    name: Optional[str]
-    aliases: Optional[List[str]]
-    status: Optional[str]
-    industry: Optional[str]
-    owner_id: Optional[int]
-    notes: Optional[str]
-    tags: Optional[List[str]]
+    name: Optional[str] = None
+    aliases: Optional[List[str]] = None
+    status: Optional[str] = None
+    industry: Optional[str] = None
+    owner_id: Optional[int] = None
+    notes: Optional[str] = None
+    tags: Optional[List[str]] = None
 
 
 class CustomerOut(CustomerBase):

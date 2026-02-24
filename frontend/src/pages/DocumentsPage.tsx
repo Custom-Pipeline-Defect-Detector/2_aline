@@ -1,4 +1,4 @@
-import { Fragment, useEffect, useMemo, useState } from 'react'
+import { Fragment, useEffect, useMemo, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { ApiError, apiFetch, buildApiUrl, reprocessDocument } from '../api'
 import { useAuth } from '../auth/AuthContext'
@@ -76,6 +76,8 @@ export default function DocumentsPage() {
 
   const [jsonErrors, setJsonErrors] = useState<Record<number, string>>({})
   const [savingDocId, setSavingDocId] = useState<number | null>(null)
+  const autoSaveTimers = useRef<Record<number, number>>({})
+  const autoSaveInFlight = useRef<Record<number, boolean>>({})
 
   const toast = useToast()
   const { can } = useAuth()
@@ -138,12 +140,14 @@ export default function DocumentsPage() {
     }
   }
 
-  const saveEdits = async (doc: DocumentItem) => {
+  const saveEdits = async (doc: DocumentItem, options?: { silent?: boolean }) => {
     const values = editValues[doc.id]
     if (!values) return
 
     if (!validateJson(doc.id)) {
-      toast.push({ title: 'Invalid JSON', description: 'Fix JSON before saving.', variant: 'error' })
+      if (!options?.silent) {
+        toast.push({ title: 'Invalid JSON', description: 'Fix JSON before saving.', variant: 'error' })
+      }
       return
     }
 
@@ -151,7 +155,9 @@ export default function DocumentsPage() {
     try {
       parsedFields = values.extracted_fields ? JSON.parse(values.extracted_fields) : {}
     } catch {
-      toast.push({ title: 'Invalid JSON', description: 'Extracted fields must be valid JSON.', variant: 'error' })
+      if (!options?.silent) {
+        toast.push({ title: 'Invalid JSON', description: 'Extracted fields must be valid JSON.', variant: 'error' })
+      }
       return
     }
 
@@ -167,19 +173,39 @@ export default function DocumentsPage() {
         }),
       })
 
-      toast.push({ title: 'Document updated', variant: 'success' })
+      if (!options?.silent) {
+        toast.push({ title: 'Document updated', variant: 'success' })
+      }
 
       // Reload list so table reflects latest server state
       await loadDocs()
     } catch (err) {
-      toast.push({
-        title: 'Save failed',
-        description: err instanceof ApiError && err.status === 403 ? "You don't have access" : 'Please try again.',
-        variant: 'error',
-      })
+      if (!options?.silent) {
+        toast.push({
+          title: 'Save failed',
+          description: err instanceof ApiError && err.status === 403 ? "You don't have access" : 'Please try again.',
+          variant: 'error',
+        })
+      }
     } finally {
       setSavingDocId(null)
     }
+  }
+
+  const scheduleAutoSave = (doc: DocumentItem) => {
+    if (!canWrite || doc.processing_status !== 'done') return
+    if (autoSaveInFlight.current[doc.id]) return
+
+    if (autoSaveTimers.current[doc.id]) {
+      window.clearTimeout(autoSaveTimers.current[doc.id])
+    }
+
+    autoSaveTimers.current[doc.id] = window.setTimeout(async () => {
+      autoSaveInFlight.current[doc.id] = true
+      await saveEdits(doc, { silent: true })
+      autoSaveInFlight.current[doc.id] = false
+      delete autoSaveTimers.current[doc.id]
+    }, 900)
   }
 
   const upload = async () => {
@@ -381,7 +407,10 @@ export default function DocumentsPage() {
                             className="mt-3 w-full rounded-2xl border border-slate-200 bg-white p-3 text-sm shadow-sm focus:outline-none focus:ring-2 focus:ring-cyan-300/40"
                             rows={7}
                             value={editValues[doc.id]?.agent_summary ?? ''}
-                            onChange={(event) => updateEditField(doc.id, 'agent_summary', event.target.value)}
+                            onChange={(event) => {
+                              updateEditField(doc.id, 'agent_summary', event.target.value)
+                              scheduleAutoSave(doc)
+                            }}
                             disabled={!canWrite}
                           />
                         </Card>
@@ -406,7 +435,10 @@ export default function DocumentsPage() {
                               jsonErrors[doc.id] ? 'border-rose-300' : 'border-slate-200'
                             )}
                             value={editValues[doc.id]?.extracted_fields ?? '{}'}
-                            onChange={(event) => updateEditField(doc.id, 'extracted_fields', event.target.value)}
+                            onChange={(event) => {
+                              updateEditField(doc.id, 'extracted_fields', event.target.value)
+                              scheduleAutoSave(doc)
+                            }}
                             onBlur={() => validateJson(doc.id)}
                             disabled={!canWrite}
                           />
@@ -439,7 +471,10 @@ export default function DocumentsPage() {
                           <select
                             className="mt-2 w-full rounded-2xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-800 shadow-sm focus:outline-none focus:ring-2 focus:ring-cyan-300/40"
                             value={editValues[doc.id]?.document_type ?? ''}
-                            onChange={(event) => updateEditField(doc.id, 'document_type', event.target.value)}
+                            onChange={(event) => {
+                              updateEditField(doc.id, 'document_type', event.target.value)
+                              scheduleAutoSave(doc)
+                            }}
                             disabled={!canWrite}
                           >
                             <option value="">(unset)</option>
@@ -460,7 +495,10 @@ export default function DocumentsPage() {
                             <input
                               type="checkbox"
                               checked={editValues[doc.id]?.needs_review ?? false}
-                              onChange={(event) => updateEditField(doc.id, 'needs_review', event.target.checked)}
+                              onChange={(event) => {
+                                updateEditField(doc.id, 'needs_review', event.target.checked)
+                                scheduleAutoSave(doc)
+                              }}
                               disabled={!canWrite}
                             />
                             Needs review
@@ -477,7 +515,7 @@ export default function DocumentsPage() {
                         <Card className="p-4">
                           <CardTitle>Actions</CardTitle>
                           <p className="mt-2 text-sm text-slate-500">
-                            Update document metadata or extracted fields if corrections are needed.
+                            Changes are auto-saved after AI processing. Use Save now if you want to force a sync.
                           </p>
 
                           <div className="mt-4 flex flex-wrap gap-2">
@@ -485,7 +523,7 @@ export default function DocumentsPage() {
                               onClick={() => void saveEdits(doc)}
                               disabled={!canWrite || savingDocId === doc.id}
                             >
-                              {savingDocId === doc.id ? 'Saving…' : 'Save edits'}
+                              {savingDocId === doc.id ? 'Saving…' : 'Save now'}
                             </Button>
 
                             <Button
