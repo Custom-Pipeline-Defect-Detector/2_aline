@@ -103,6 +103,7 @@ class WatchHandler(FileSystemEventHandler):
             db.add(version)
             db.commit()
             celery_app.send_task("extract_and_propose", args=[version.id])
+            celery_app.send_task("process_document", args=[document.id])
         finally:
             db.close()
 
