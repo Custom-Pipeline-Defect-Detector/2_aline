@@ -1,4 +1,4 @@
-import { Fragment, useEffect, useMemo, useRef, useState } from 'react'
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { ApiError, apiFetch, buildApiUrl, reprocessDocument } from '../api'
 import { useAuth } from '../auth/AuthContext'
@@ -83,18 +83,31 @@ export default function DocumentsPage() {
   const { can } = useAuth()
   const canWrite = can('documentsWrite')
 
-  const loadDocs = async () => {
+  const loadDocs = useCallback(async () => {
     try {
       const data = (await apiFetch('/documents')) as DocumentItem[]
       setDocuments(data)
     } catch {
       setDocuments([])
     }
-  }
+  }, [])
 
   useEffect(() => {
     void loadDocs()
-  }, [])
+  }, [loadDocs])
+
+  useEffect(() => {
+    const hasActiveJobs = documents.some((doc) => doc.processing_status === 'queued' || doc.processing_status === 'processing')
+    if (!hasActiveJobs) return
+
+    const timer = window.setInterval(() => {
+      void loadDocs()
+    }, 2500)
+
+    return () => {
+      window.clearInterval(timer)
+    }
+  }, [documents, loadDocs])
 
   const ensureEditValues = (doc: DocumentItem) => {
     setEditValues((current) => {
