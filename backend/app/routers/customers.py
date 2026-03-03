@@ -7,7 +7,6 @@ from sqlalchemy import func
 from sqlalchemy.exc import SQLAlchemyError
 from app import models, schemas
 from app.rbac import CUSTOMERS_READ_ROLES, CUSTOMERS_WRITE_ROLES
-from app.services.customers import find_similar_customer
 from app.deps import get_db, require_roles, get_current_user
 from app.routers.projects import compute_project_health
 
@@ -77,25 +76,29 @@ def create_customer(
     db: Session = Depends(get_db),
     current_user: models.User = Depends(get_current_user),
 ):
-    customer = find_similar_customer(db, payload.name) or db.query(models.Customer).filter_by(name=payload.name).first()
-    if customer:
-        if payload.name and payload.name != customer.name and payload.name not in (customer.aliases or []):
-            customer.aliases = sorted({*(customer.aliases or []), payload.name})
-        for field, value in payload.model_dump(exclude_unset=True, exclude={"contacts"}).items():
-            setattr(customer, field, value)
-        db.commit()
-    else:
-        customer = models.Customer(
-            name=payload.name,
-            aliases=payload.aliases or [],
-            status=payload.status or "lead",
-            industry=payload.industry,
-            owner_id=payload.owner_id,
-            notes=payload.notes,
-            tags=payload.tags or [],
-        )
-        db.add(customer)
-        db.flush()
+    normalized_name = (payload.name or "").strip()
+    if not normalized_name:
+        raise HTTPException(status_code=400, detail="Customer name is required")
+
+    existing = (
+        db.query(models.Customer)
+        .filter(func.lower(models.Customer.name) == normalized_name.lower())
+        .first()
+    )
+    if existing:
+        raise HTTPException(status_code=409, detail="Customer with this name already exists")
+
+    customer = models.Customer(
+        name=normalized_name,
+        aliases=payload.aliases or [],
+        status=payload.status or "lead",
+        industry=payload.industry,
+        owner_id=payload.owner_id,
+        notes=payload.notes,
+        tags=payload.tags or [],
+    )
+    db.add(customer)
+    db.flush()
     if payload.contacts:
         existing_contacts = {(c.name or "", c.email or "") for c in customer.contacts}
         for contact in payload.contacts:

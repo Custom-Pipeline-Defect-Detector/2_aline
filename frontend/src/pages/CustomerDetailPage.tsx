@@ -32,10 +32,12 @@ interface CustomerDetail {
 export default function CustomerDetailPage() {
   const { id } = useParams()
   const [customer, setCustomer] = useState<CustomerDetail | null>(null)
+  const [draft, setDraft] = useState<CustomerDetail | null>(null)
   const [tab, setTab] = useState<TabKey>('overview')
   const [newContact, setNewContact] = useState({ name: '', email: '', role_title: '', phone: '' })
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
+  const [saving, setSaving] = useState(false)
   const toast = useToast()
 
   const load = () => {
@@ -43,9 +45,13 @@ export default function CustomerDetailPage() {
     setLoading(true)
     setError('')
     apiFetch(`/customers/${id}`)
-      .then((data) => setCustomer(data))
+      .then((data) => {
+        setCustomer(data)
+        setDraft(data)
+      })
       .catch(() => {
         setCustomer(null)
+        setDraft(null)
         setError('Unable to load customer details.')
       })
       .finally(() => setLoading(false))
@@ -57,29 +63,58 @@ export default function CustomerDetailPage() {
 
   const updateCustomer = async (field: string, value: any) => {
     if (!id) return
-    await apiFetch(`/customers/${id}`, {
-      method: 'PATCH',
-      body: JSON.stringify({ [field]: value }),
-    })
-    load()
+    setSaving(true)
+    try {
+      const updated = await apiFetch(`/customers/${id}`, {
+        method: 'PATCH',
+        body: JSON.stringify({ [field]: value }),
+      })
+      setCustomer(updated)
+      setDraft(updated)
+    } catch (err) {
+      toast.push({
+        title: 'Update failed',
+        description: err instanceof Error ? err.message : 'Please try again.',
+        variant: 'error',
+      })
+      load()
+    } finally {
+      setSaving(false)
+    }
   }
 
   const addContact = async () => {
     if (!id || !newContact.name) return
-    await apiFetch(`/customers/${id}/contacts`, {
-      method: 'POST',
-      body: JSON.stringify(newContact),
-    })
-    toast.push({ title: 'Contact added', variant: 'success' })
-    setNewContact({ name: '', email: '', role_title: '', phone: '' })
-    load()
+    try {
+      await apiFetch(`/customers/${id}/contacts`, {
+        method: 'POST',
+        body: JSON.stringify(newContact),
+      })
+      toast.push({ title: 'Contact added', variant: 'success' })
+      setNewContact({ name: '', email: '', role_title: '', phone: '' })
+      load()
+    } catch (err) {
+      toast.push({
+        title: 'Add contact failed',
+        description: err instanceof Error ? err.message : 'Please try again.',
+        variant: 'error',
+      })
+    }
   }
 
   const removeContact = async (contactId: number) => {
     if (!id) return
-    await apiFetch(`/customers/${id}/contacts/${contactId}`, { method: 'DELETE' })
-    toast.push({ title: 'Contact removed', variant: 'info' })
-    load()
+    try {
+      await apiFetch(`/customers/${id}/contacts/${contactId}`, { method: 'DELETE' })
+      toast.push({ title: 'Contact removed', variant: 'info' })
+      load()
+    } catch (err) {
+      toast.push({
+        title: 'Remove contact failed',
+        description: err instanceof Error ? err.message : 'Please try again.',
+        variant: 'error',
+      })
+    }
   }
 
   if (loading) {
@@ -101,7 +136,7 @@ export default function CustomerDetailPage() {
     )
   }
 
-  if (!customer) {
+  if (!customer || !draft) {
     return (
       <Card className="p-6 text-center">
         <div className="text-sm text-slate-500">Customer not found.</div>
@@ -126,15 +161,26 @@ export default function CustomerDetailPage() {
             <div className="text-xs uppercase text-slate-400">Customer</div>
             <Input
               className="mt-2 text-xl font-semibold"
-              value={customer.name}
-              onChange={(event) => updateCustomer('name', event.target.value)}
+              value={draft.name}
+              disabled={saving}
+              onChange={(event) => setDraft({ ...draft, name: event.target.value })}
+              onBlur={() => {
+                if (draft.name !== customer.name) {
+                  void updateCustomer('name', draft.name)
+                }
+              }}
             />
           </div>
           <div className="flex items-center gap-2">
             <select
               className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm"
-              value={customer.status}
-              onChange={(event) => updateCustomer('status', event.target.value)}
+              value={draft.status}
+              disabled={saving}
+              onChange={(event) => {
+                const next = event.target.value
+                setDraft({ ...draft, status: next })
+                void updateCustomer('status', next)
+              }}
             >
               <option value="lead">Lead</option>
               <option value="active">Active</option>
@@ -165,24 +211,38 @@ export default function CustomerDetailPage() {
             <div className="text-xs uppercase text-slate-400">Industry</div>
             <Input
               className="mt-3"
-              value={customer.industry ?? ''}
-              onChange={(event) => updateCustomer('industry', event.target.value)}
+              value={draft.industry ?? ''}
+              disabled={saving}
+              onChange={(event) => setDraft({ ...draft, industry: event.target.value })}
+              onBlur={() => {
+                if ((draft.industry ?? '') !== (customer.industry ?? '')) {
+                  void updateCustomer('industry', draft.industry || null)
+                }
+              }}
             />
           </Card>
           <Card className="p-4">
             <div className="text-xs uppercase text-slate-400">Tags</div>
             <Input
               className="mt-3"
-              value={customer.tags.join(', ')}
+              value={(draft.tags || []).join(', ')}
+              disabled={saving}
               onChange={(event) =>
-                updateCustomer(
-                  'tags',
-                  event.target.value
+                setDraft({
+                  ...draft,
+                  tags: event.target.value
                     .split(',')
                     .map((tag) => tag.trim())
-                    .filter(Boolean)
-                )
+                    .filter(Boolean),
+                })
               }
+              onBlur={() => {
+                const currentTags = JSON.stringify(customer.tags || [])
+                const nextTags = JSON.stringify(draft.tags || [])
+                if (currentTags !== nextTags) {
+                  void updateCustomer('tags', draft.tags || [])
+                }
+              }}
             />
           </Card>
           <Card className="p-4 md:col-span-2">
@@ -190,8 +250,14 @@ export default function CustomerDetailPage() {
             <textarea
               className="mt-3 w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm"
               rows={4}
-              value={customer.notes ?? ''}
-              onChange={(event) => updateCustomer('notes', event.target.value)}
+              value={draft.notes ?? ''}
+              disabled={saving}
+              onChange={(event) => setDraft({ ...draft, notes: event.target.value })}
+              onBlur={() => {
+                if ((draft.notes ?? '') !== (customer.notes ?? '')) {
+                  void updateCustomer('notes', draft.notes || null)
+                }
+              }}
             />
           </Card>
         </div>

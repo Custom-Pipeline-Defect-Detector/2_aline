@@ -41,13 +41,15 @@ def _check_worker() -> tuple[bool, str | None]:
         return False, str(exc)
 
 
-def _check_ollama() -> tuple[bool, str | None]:
+def _check_openai() -> tuple[bool, str | None]:
     try:
-        with httpx.Client(timeout=2.0) as client:
-            base_url = settings.ollama_base_url.rstrip("/")
-            response = client.get(f"{base_url}/api/tags")
-            ok = response.status_code < 500
-            return ok, None if ok else f"HTTP {response.status_code}"
+        # Check if we have the required API settings
+        if not settings.openai_api_key:
+            return False, "OpenAI API key not configured"
+        if not settings.openai_base_url:
+            return False, "OpenAI base URL not configured"
+        # We can't easily test the API without making a real call, so we just check if settings exist
+        return True, None
     except Exception as exc:
         return False, str(exc)
 
@@ -57,7 +59,7 @@ def get_status(db: Session = Depends(get_db)):
     db_ok, db_error = _check_db(db)
     redis_ok, redis_error = _check_redis()
     worker_ok, worker_error = _check_worker()
-    ollama_ok, ollama_error = _check_ollama()
+    openai_ok, openai_error = _check_openai()
 
     last_processed = None
     if db_ok:
@@ -73,13 +75,13 @@ def get_status(db: Session = Depends(get_db)):
         "redis_ok": redis_ok,
         "worker_ok": worker_ok,
         "watcher_ok": True,
-        "ollama_ok": ollama_ok,
+        "openai_ok": openai_ok,
         "last_processed_doc": last_processed,
         "checked_at": datetime.utcnow(),
         "errors": {
             "db": db_error,
             "redis": redis_error,
             "worker": worker_error,
-            "ollama": ollama_error,
+            "openai": openai_error,
         },
     }

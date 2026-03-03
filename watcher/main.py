@@ -9,6 +9,7 @@ from sqlalchemy.orm import sessionmaker, declarative_base
 from sqlalchemy.sql import func
 from celery import Celery
 
+# Updated to use OpenAI API configuration
 DATABASE_URL = os.getenv("DATABASE_URL", "postgresql+psycopg2://aline:aline@localhost:5432/aline")
 FILE_STORAGE_ROOT = os.getenv("FILE_STORAGE_ROOT", "/data/aline_docs")
 WATCH_PATHS = os.getenv("WATCH_PATHS", FILE_STORAGE_ROOT)
@@ -103,6 +104,7 @@ class WatchHandler(FileSystemEventHandler):
             db.add(version)
             db.commit()
             celery_app.send_task("extract_and_propose", args=[version.id])
+            celery_app.send_task("process_document", args=[document.id])
         finally:
             db.close()
 

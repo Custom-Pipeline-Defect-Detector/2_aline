@@ -33,13 +33,15 @@ services:
       CELERY_BROKER_URL: redis://redis:6379/0
       CELERY_RESULT_BACKEND: redis://redis:6379/0
 
-      # Ollama
-      OLLAMA_BASE_URL: ${OLLAMA_BASE_URL:-http://host.docker.internal:11434}
-      OLLAMA_MODEL: ${OLLAMA_MODEL:-qwen2.5-coder:7b}
+      # OpenAI API Configuration (Ollama removed)
+      OPENAI_API_KEY: ${OPENAI_API_KEY}
+      OPENAI_BASE_URL: ${OPENAI_BASE_URL:-https://coding.dashscope.aliyuncs.com/v1}
+      MODEL_NAME: ${MODEL_NAME:-qwen3-coder-plus}
 
       FILE_STORAGE_ROOT: /storage
       JWT_SECRET: ${JWT_SECRET:-change_me}
       API_KEY_INTERNAL: internal_watcher_key_change_me
+      ALLOWED_FILE_TYPES: ${ALLOWED_FILE_TYPES:-pdf,docx,xlsx,txt,jpg,png,doc,xls}
 
     volumes:
       - "${WATCH_PATH:-C:\\AlineInbox}:/watch:rw"
@@ -53,6 +55,13 @@ services:
 
     ports:
       - "8000:8000"
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
 
   worker:
     build: ./backend
@@ -68,13 +77,15 @@ services:
       CELERY_BROKER_URL: redis://redis:6379/0
       CELERY_RESULT_BACKEND: redis://redis:6379/0
 
-      # Ollama
-      OLLAMA_BASE_URL: ${OLLAMA_BASE_URL:-http://host.docker.internal:11434}
-      OLLAMA_MODEL: ${OLLAMA_MODEL:-qwen2.5-coder:7b}
+      # OpenAI API Configuration (Ollama removed)
+      OPENAI_API_KEY: ${OPENAI_API_KEY}
+      OPENAI_BASE_URL: ${OPENAI_BASE_URL:-https://coding.dashscope.aliyuncs.com/v1}
+      MODEL_NAME: ${MODEL_NAME:-qwen3-coder-plus}
 
       FILE_STORAGE_ROOT: /storage
       JWT_SECRET: ${JWT_SECRET:-change_me}
       API_KEY_INTERNAL: internal_watcher_key_change_me
+      ALLOWED_FILE_TYPES: ${ALLOWED_FILE_TYPES:-pdf,docx,xlsx,txt,jpg,png,doc,xls}
 
     volumes:
       - "${WATCH_PATH:-C:\\AlineInbox}:/watch:rw"
@@ -85,6 +96,7 @@ services:
         condition: service_started
       redis:
         condition: service_started
+    restart: unless-stopped
 
   watcher:
     build: ./watcher

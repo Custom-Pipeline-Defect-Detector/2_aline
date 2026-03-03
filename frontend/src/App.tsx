@@ -29,7 +29,7 @@ export default function App() {
         <Route element={<AppShell />}>
           <Route index element={<Navigate to="/inbox" replace />} />
           <Route path="/dashboard" element={<ErrorBoundary><DashboardPage /></ErrorBoundary>} />
-          <Route path="/inbox" element={<RequireRoles roles={["Admin", "Manager", "PM", "Sales"]}><ErrorBoundary><InboxPage /></ErrorBoundary></RequireRoles>} />
+          <Route path="/inbox" element={<ErrorBoundary><InboxPage /></ErrorBoundary>} />
           <Route path="/documents" element={<ErrorBoundary><DocumentsPage /></ErrorBoundary>} />
           <Route path="/messages" element={<ErrorBoundary><MessagesPage /></ErrorBoundary>} />
           <Route path="/proposals" element={<ErrorBoundary><ProposalsPage /></ErrorBoundary>} />

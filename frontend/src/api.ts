@@ -23,22 +23,46 @@ export function getToken() {
 export async function apiFetch(path: string, options: RequestInit = {}) {
   const token = getToken()
   const headers = new Headers(options.headers || {})
+  const method = String(options.method || 'GET').toUpperCase()
   if (token) {
     headers.set('Authorization', `Bearer ${token}`)
   }
   if (!(options.body instanceof FormData)) {
     headers.set('Content-Type', 'application/json')
   }
-  const response = await fetch(buildApiUrl(path), { ...options, headers })
+  const response = await fetch(buildApiUrl(path), {
+    ...options,
+    headers,
+    cache: options.cache ?? (method === 'GET' ? 'no-store' : 'default'),
+  })
   if (!response.ok) {
     const text = await response.text()
+    let message = text || response.statusText
+    if (text) {
+      try {
+        const parsed = JSON.parse(text) as { detail?: unknown }
+        if (typeof parsed.detail === 'string') {
+          message = parsed.detail
+        } else if (Array.isArray(parsed.detail)) {
+          message = parsed.detail
+            .map((item) => {
+              if (typeof item === 'string') return item
+              if (item && typeof item === 'object' && 'msg' in item) return String((item as { msg?: unknown }).msg)
+              return JSON.stringify(item)
+            })
+            .join('; ')
+        }
+      } catch {
+        // keep raw text fallback
+      }
+    }
     if (response.status === 401) {
       localStorage.removeItem('token')
       if (typeof window !== 'undefined' && window.location.pathname !== '/login') {
         window.location.assign('/login')
       }
     }
-    throw new ApiError(response.status, text || response.statusText)
+    throw new ApiError(response.status, message)
   }
   if (response.status === 204) return null
   try {

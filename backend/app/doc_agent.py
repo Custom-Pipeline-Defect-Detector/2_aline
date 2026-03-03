@@ -9,6 +9,7 @@ from app.database import SessionLocal
 from app import models
 from app.services.extraction import extract_text
 from app.agent_tools import run_tool, TOOL_REGISTRY
+from app.ollama_client import _chat, _json_or_retry
 
 
 DOCUMENT_TAXONOMY = [
@@ -66,18 +67,13 @@ def _parse_json(text: str) -> Dict[str, Any]:
 
 
 def _call_ollama(prompt: str, model: str) -> Dict[str, Any]:
-    payload = {
-        "model": model,
-        "prompt": prompt,
-        "stream": False,
-        "options": {"temperature": 0.2},
-    }
-    with httpx.Client(timeout=None) as client:
-        response = client.post(f"{settings.ollama_base_url}/api/generate", json=payload)
-        response.raise_for_status()
-        data = response.json()
-        output = data.get("response", "")
-    return _parse_json(output)
+    # Use the OpenAI-compatible API instead of Ollama
+    messages = [
+        {"role": "system", "content": "You are a helpful assistant that responds only with valid JSON."},
+        {"role": "user", "content": prompt}
+    ]
+    response = _chat(messages, temperature=0.2)
+    return _json_or_retry(response)
 
 
 def _tool_manifest() -> str:

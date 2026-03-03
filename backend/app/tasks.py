@@ -5,7 +5,7 @@ from typing import Any
 
 from sqlalchemy.orm import Session
 
-from app import models
+from app import models, schemas
 from app.celery_app import celery
 from app.core.config import settings
 from app.database import SessionLocal
@@ -15,7 +15,8 @@ from app.extraction.schemas import SCHEMA_MAP
 from app.extraction.validator import validate_json
 from app.services.extraction import extract_text
 from app.services.mapper import map_to_proposals
-from app.services.ollama import call_ollama
+from app.ollama_client import _chat
+from app.routers.proposals import _apply_decision
 
 logger = logging.getLogger("extraction")
 logger.setLevel(logging.INFO)
@@ -60,7 +61,7 @@ def _safe_json_loads(text: str) -> dict[str, Any]:
 
 
 def classify_document(text: str) -> str:
-    prompt = f"""
+    system_prompt = """
 Classify this document into one of:
 - invoice
 - purchase_order
@@ -69,14 +70,15 @@ Classify this document into one of:
 - unknown
 
 Return ONLY valid JSON with:
-{{"document_type": "..."}}
-
-DOCUMENT:
-{text}
-""".strip()
+{"document_type": "..."}
+"""
 
     try:
-        response = call_ollama(prompt)
+        messages = [
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": f"DOCUMENT:\n{text}"}
+        ]
+        response = _chat(messages, temperature=0.2)
         parsed = _safe_json_loads(response)
     except Exception:
         return "unknown"
@@ -90,7 +92,11 @@ def run_extraction(document_text: str, document_type: str) -> dict[str, Any]:
 
     for attempt in range(MAX_RETRIES + 1):
         prompt = build_extraction_prompt(document_text, schema)
-        response_text = call_ollama(prompt)
+        messages = [
+            {"role": "system", "content": "You are a structured data extraction engine. Extract from the document and return ONLY valid JSON. Do NOT add any explanations, comments, or markdown."},
+            {"role": "user", "content": prompt}
+        ]
+        response_text = _chat(messages, temperature=0.2)
         logger.info("Attempt %s, raw AI response: %s", attempt, response_text)
 
         try:
@@ -210,5 +216,33 @@ def process_document(document_id: int) -> None:
         document.processing_error = None
         db.commit()
         run_document_agent(document_id)
+
+        if settings.auto_approve_proposals:
+            system_user = None
+            if document.uploader_id:
+                system_user = db.query(models.User).filter(models.User.id == document.uploader_id).first()
+            if system_user is None:
+                system_user = db.query(models.User).order_by(models.User.id.asc()).first()
+
+            if system_user is not None:
+                pending = (
+                    db.query(models.Proposal)
+                    .join(models.DocumentVersion, models.DocumentVersion.id == models.Proposal.doc_version_id)
+                    .filter(
+                        models.DocumentVersion.doc_id == document_id,
+                        models.Proposal.status == "pending",
+                    )
+                    .all()
+                )
+                for proposal in pending:
+                    try:
+                        _apply_decision(
+                            proposal,
+                            schemas.ProposalDecision(status="approved"),
+                            db,
+                            system_user,
+                        )
+                    except Exception:
+                        db.rollback()
     finally:
         db.close()

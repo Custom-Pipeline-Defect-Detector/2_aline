@@ -334,6 +334,19 @@ class ChatMessageCreate(BaseModel):
     context: Optional[Dict[str, Any]] = None
 
 
+class ChatBackgroundRunRequest(BaseModel):
+    goal: str
+    max_rounds: int = 6
+    context: Optional[Dict[str, Any]] = None
+
+
+class ChatBackgroundRunOut(BaseModel):
+    reply: str
+    rounds_executed: int
+    done: bool
+    last_actions: List[AIProposedAction] = []
+
+
 class ChatMessageOut(BaseModel):
     id: int
     role: str
@@ -347,6 +360,9 @@ class ChatMessageOut(BaseModel):
 class ChatReplyOut(BaseModel):
     reply: str
     memory_updated: bool
+    proposed_actions: List[AIProposedAction] = []
+    rounds_executed: int = 1
+    done: bool = True
 
 
 class UserMemoryOut(BaseModel):

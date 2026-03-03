@@ -1,69 +1,155 @@
-# Aline AI Doc Hub (MVP)
+# ALINE AI Document Processing System (OpenAI-Only Version)
 
-AI-first internal web app for Nanjing Aline Automation Company. Users upload documents, the system extracts text, routes and extracts entities via Ollama, generates proposals, and only approved proposals are written into core tables with full audit logs.
+This is a robust document processing system that uses OpenAI-compatible APIs for document classification, extraction, and routing. This version has been optimized to use only OpenAI-compatible APIs and removes all Ollama dependencies.
 
-## Quick start
+## Features
 
+- **Document Classification**: Automatically categorizes documents into predefined types
+- **Information Extraction**: Extracts structured data from documents
+- **File Watching**: Monitors specified directories for new documents
+- **Background Processing**: Asynchronous task processing with Celery
+- **Web Interface**: Frontend for managing documents and viewing results
+
+## Architecture
+
+The system consists of multiple services:
+
+- **Backend**: FastAPI application for API endpoints
+- **Worker**: Celery workers for background tasks
+- **Watcher**: File system watcher for new documents
+- **PostgreSQL**: Database for storing metadata
+- **Redis**: Message broker for Celery
+- **Frontend**: Web interface
+
+## Prerequisites
+
+- Docker and Docker Compose
+- OpenAI API key (or compatible API key)
+- Windows or Linux system with sufficient storage for documents
+
+## Setup
+
+1. Clone the repository:
 ```bash
-docker compose up --build
+git clone <repository-url>
+cd aline_ai_mvp_windows_lan
 ```
 
-If your environment blocks Docker Hub authentication, ensure the base images are already cached locally and run:
-
+2. Copy the example environment file:
 ```bash
-docker compose up --build --pull=never
+cp .env.example .env
 ```
 
-Open:
-- Backend API: http://localhost:8000/api
-- Frontend UI: http://localhost:9876
+3. Edit the `.env` file to include your OpenAI API key:
+```bash
+OPENAI_API_KEY=your_openai_api_key_here
+```
 
-## Seeded admin user
-- Email: `mir@aline.com`
-- Password: `89ui89ui` (change after first login)
+4. Customize other environment variables as needed:
+   - `WATCH_PATH`: Directory to watch for new documents (default: `C:\AlineInbox`)
+   - `FILE_STORAGE_ROOT`: Directory to store processed documents (default: `C:\AlineStorage`)
+   - `WEB_PORT`: Port for the web interface (default: 9876)
+
+## Running the Application
+
+Start all services with Docker Compose:
+
+```bash
+docker-compose up --build
+```
+
+The application will be available at `http://localhost:9876`
+
+## Configuration Options
+
+### OpenAI Compatible API Settings (DashScope)
+- `OPENAI_API_KEY`: Your DashScope API key (example: `sk-sp-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx`)
+- `OPENAI_BASE_URL`: API endpoint (default: `https://coding.dashscope.aliyuncs.com/v1`)
+- `MODEL_NAME`: Model to use (default: `qwen3-coder-plus`)
+
+### Application Settings
+- `REQUEST_TIMEOUT`: API request timeout in seconds (default: 60)
+- `MAX_FILE_SIZE`: Maximum file size in MB (default: 50)
+- `LOG_LEVEL`: Logging level (default: INFO)
+
+### Security Settings
+- `SECURE_COOKIES`: Enable secure cookies (default: true)
+- `MAX_LOGIN_ATTEMPTS`: Max login attempts before lockout (default: 5)
+- `LOGIN_LOCKOUT_TIME`: Lockout duration in seconds (default: 300)
 
 ## Services
-- **backend**: FastAPI + SQLAlchemy + Alembic
-- **worker**: Celery worker for extraction + AI processing
-- **watcher**: Watchdog service for file system ingestion
-- **postgres**: DB
-- **redis**: broker/result backend
-- **frontend**: React + Vite + Tailwind
 
-## Environment variables
-| Variable | Default | Purpose |
-| --- | --- | --- |
-| `DATABASE_URL` | `postgresql+psycopg2://aline:aline@postgres:5432/aline` | DB connection |
-| `FILE_STORAGE_ROOT` | `/data/aline_docs` | Document storage |
-| `OLLAMA_BASE_URL` | `http://host.docker.internal:11434` | Ollama endpoint |
-| `OLLAMA_MODEL` | `qwen2.5-coder:7b` | Model name |
-| `WATCH_PATHS` | `/data/aline_docs` | Watcher paths |
-| `CELERY_BROKER_URL` | `redis://redis:6379/0` | Celery broker |
+### Backend
+- Runs on port 8000 internally
+- Provides REST API for document processing
+- Handles authentication and database operations
 
+### Worker
+- Processes background tasks using Celery
+- Performs document classification and extraction
+- Communicates with OpenAI API
 
-## Local backend startup (without Docker)
+### Watcher
+- Monitors the `WATCH_PATH` directory for new files
+- Creates database records for new documents
+- Triggers processing workflows
+
+### Frontend
+- Web interface for managing documents
+- Runs on port specified by `WEB_PORT` (default: 9876)
+
+## Troubleshooting
+
+### Common Issues
+
+1. **API Key Errors**: Ensure your `OPENAI_API_KEY` is correctly set in the `.env` file
+2. **Database Connection**: Check that PostgreSQL is running and accessible
+3. **File Permissions**: Ensure the application has read/write access to the watch and storage directories
+
+### Logs
+Check service logs with:
 ```bash
+docker-compose logs -f <service-name>
+```
+
+## Development
+
+To run individual services during development:
+
+```bash
+# Start only the database and Redis
+docker-compose up postgres redis
+
+# Run backend in development mode
 cd backend
 pip install -r requirements.txt
-alembic upgrade head
-python -m app.seed
-uvicorn app.main:app --host 0.0.0.0 --port 8000
+uvicorn app.main:app --reload
 ```
 
-If `/api/dashboard/summary` or `/api/customers` returns a 503, verify database connectivity and re-run `alembic upgrade head`.
+## Security
 
-## Tests
+- All API keys are stored in environment variables
+- JWT tokens are used for authentication
+- Rate limiting and login attempt tracking are implemented
+- Secure cookie settings are configurable
+
+## Performance
+
+- Document processing is handled asynchronously
+- API calls include retry logic with exponential backoff
+- Database connections are pooled
+- File watching is optimized for performance
+
+## Updating
+
+To update to the latest version:
+
 ```bash
-cd backend
-pytest
+git pull
+docker-compose down
+docker-compose up --build
 ```
 
-## AI chat memory behavior
-- AI chat sessions, messages, and memory items are stored per authenticated user and never shared across users.
-- The assistant uses only recent session messages plus a small set of durable memory items (not the full transcript forever).
-- Users can inspect and delete their saved memory entries from the AI Inbox memory dialog.
+## Support
 
-## Messages feature (separate from AI Inbox)
-- `/messages` provides human-to-human chat for authenticated users.
-- It has two modes: direct messages (1:1 private rooms) and a single global shared room.
-- This is implemented under `/api/messages/*` and is intentionally separate from `/api/ai/*` (AI sessions/memory).
+For issues or questions, please check the logs and ensure your OpenAI API key is valid and has sufficient quota.

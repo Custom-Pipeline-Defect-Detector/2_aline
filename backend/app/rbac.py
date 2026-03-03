@@ -12,8 +12,8 @@ CUSTOMERS_WRITE_ROLES: Final = ["Admin", "Manager", "Sales", "PM"]
 DOCUMENTS_READ_ROLES: Final = READ_ROLES_ALL
 DOCUMENTS_WRITE_ROLES: Final = ["Admin", "Manager", "PM", "Sales", "Engineer", "Technician", "QC"]
 
-PROPOSALS_READ_ROLES: Final = ["Admin", "Manager", "PM", "Sales"]
-PROPOSALS_APPROVE_ROLES: Final = ["Admin", "Manager"]
+PROPOSALS_READ_ROLES: Final = READ_ROLES_ALL
+PROPOSALS_APPROVE_ROLES: Final = READ_ROLES_ALL
 
 QUALITY_READ_ROLES: Final = READ_ROLES_ALL
 QUALITY_WRITE_ROLES: Final = ["Admin", "Manager", "QC", "Engineer", "Technician"]

@@ -9,7 +9,7 @@ python-jose==3.3.0
 
 # Auth / hashing (FIX)
 passlib[bcrypt]==1.7.4
-bcrypt==3.2.2
+bcrypt==4.0.1
 
 python-multipart==0.0.9
 celery==5.4.0
@@ -25,4 +25,5 @@ psycopg[binary]
 
 requests==2.32.3
 PyJWT==2.9.0
-jsonschema==4.23.0
+jsonschema==4.26.0
+tenacity==8.5.0  # For retry logic

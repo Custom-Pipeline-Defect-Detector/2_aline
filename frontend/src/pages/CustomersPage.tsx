@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { ApiError, apiFetch } from '../api'
 import Badge from '../components/ui/Badge'
@@ -59,6 +59,7 @@ export default function CustomersPage() {
   const [contacts, setContacts] = useState<Array<{ name: string; email: string; role_title: string; phone: string }>>([])
 
   const [creating, setCreating] = useState(false)
+  const [loadingCustomers, setLoadingCustomers] = useState(false)
 
   // Inline editing state (optional)
   const [updatingCustomerId, setUpdatingCustomerId] = useState<number | null>(null)
@@ -66,18 +67,23 @@ export default function CustomersPage() {
   const navigate = useNavigate()
   const toast = useToast()
 
-  const loadCustomers = async () => {
+  const loadCustomers = useCallback(async () => {
+    setLoadingCustomers(true)
     try {
       const data = (await apiFetch('/customers')) as CustomerItem[]
       setCustomers(data)
-    } catch {
+    } catch (error) {
       setCustomers([])
+      const description = error instanceof Error ? error.message : 'Unable to load customers'
+      toast.push({ title: 'Load failed', description, variant: 'error' })
+    } finally {
+      setLoadingCustomers(false)
     }
-  }
+  }, [toast])
 
   useEffect(() => {
     void loadCustomers()
-  }, [])
+  }, [loadCustomers])
 
   // ESC closes modal
   useEffect(() => {
@@ -180,6 +186,7 @@ export default function CustomersPage() {
       })) as CustomerItem
 
       setCustomers((prev) => prev.map((c) => (c.id === id ? { ...c, ...updated } : c)))
+      await loadCustomers()
       toast.push({ title: 'Customer updated', variant: 'success' })
     } catch (err) {
       toast.push({
@@ -213,6 +220,8 @@ export default function CustomersPage() {
 
         <Button onClick={() => setShowNewCustomer(true)}>New Customer</Button>
       </div>
+
+      {loadingCustomers ? <div className="text-xs text-slate-500">Refreshing customers…</div> : null}
 
       <div className="flex items-center justify-between">
         <Input

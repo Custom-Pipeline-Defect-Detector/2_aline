@@ -45,6 +45,32 @@ interface UserMemory {
   updated_at: string
 }
 
+interface AIProposedAction {
+  label: string
+  method: 'POST' | 'PATCH' | 'DELETE'
+  path: string
+  body: Record<string, unknown>
+}
+
+interface AIProposedActionState extends AIProposedAction {
+  key: string
+  running: boolean
+  executed: boolean
+  error?: string
+}
+
+interface StreamFinalPayload {
+  reply: string
+  memory_updated: boolean
+  proposed_actions?: AIProposedAction[]
+}
+
+interface AutoApproveResult {
+  approved_count: number
+  approved_ids: number[]
+  failed: Array<{ proposal_id: string; error: string }>
+}
+
 const iconMap: Record<string, string> = {
   tasks: '✅',
   projects: '📌',
@@ -106,6 +132,10 @@ export default function InboxPage() {
   const [chatMessages, setChatMessages] = useState<ChatMessage[]>([])
   const [chatInput, setChatInput] = useState('')
   const [chatLoading, setChatLoading] = useState(false)
+  const [proposedActions, setProposedActions] = useState<AIProposedActionState[]>([])
+  const [autonomousMode, setAutonomousMode] = useState(true)
+  const [backgroundMode, setBackgroundMode] = useState(false)
+  const [backgroundRounds, setBackgroundRounds] = useState(6)
 
   const [memoryOpen, setMemoryOpen] = useState(false)
   const [memories, setMemories] = useState<UserMemory[]>([])
@@ -125,6 +155,13 @@ export default function InboxPage() {
     if (!el) return
     el.scrollIntoView({ behavior: smooth ? 'smooth' : 'auto', block: 'end' })
   }
+
+  const quickPrompts = [
+    'Summarize top risks in pending proposals',
+    'Which proposal is safest to approve first?',
+    'Suggest a follow-up task for the selected proposal',
+    'Auto-manage inbox and create needed tasks/issues now',
+  ]
 
   const load = async () => {
     setLoading(true)
@@ -213,33 +250,223 @@ export default function InboxPage() {
     setChatMessages((current) => [...current, optimisticMessage])
     setChatInput('')
     setChatLoading(true)
+    setProposedActions([])
 
     try {
-      const response = (await apiFetch(`/ai/sessions/${sessionId}/messages`, {
-        method: 'POST',
-        body: JSON.stringify({
-          message,
-          context: {
-            page: 'inbox',
-            pending_proposals: items.length,
-            selected_proposal_id: selectedProposalId,
-          },
-        }),
-      })) as { reply: string }
+      const baseContext = {
+        page: 'inbox',
+        pending_proposals: items.length,
+        selected_proposal_id: selectedProposalId,
+        available_pages: ['inbox', 'dashboard', 'projects', 'work', 'quality', 'customers', 'messages', 'documents', 'status'],
+        autonomous_mode: autonomousMode,
+      }
 
-      setChatMessages((current) => [
-        ...current,
-        {
-          id: Date.now() + 1,
-          role: 'assistant',
-          content: response.reply,
-          created_at: new Date().toISOString(),
-        },
-      ])
+      if (backgroundMode) {
+        const response = (await apiFetch(`/ai/sessions/${sessionId}/background-run`, {
+          method: 'POST',
+          body: JSON.stringify({
+            goal: message,
+            max_rounds: Math.max(1, Math.min(backgroundRounds, 12)),
+            context: { ...baseContext, background_mode: true },
+          }),
+        })) as { reply: string; last_actions?: AIProposedAction[] }
+
+        setChatMessages((current) => [
+          ...current,
+          {
+            id: Date.now() + 1,
+            role: 'assistant',
+            content: response.reply,
+            created_at: new Date().toISOString(),
+          },
+        ])
+
+        const actions = (response.last_actions || []).map((action, index) => ({
+          ...action,
+          key: `${Date.now()}-${index}`,
+          running: false,
+          executed: false,
+          error: undefined,
+        }))
+        setProposedActions(actions)
+      } else {
+        const assistantId = Date.now() + 1
+        setChatMessages((current) => [
+          ...current,
+          {
+            id: assistantId,
+            role: 'assistant',
+            content: '',
+            created_at: new Date().toISOString(),
+          },
+        ])
+
+        const token = localStorage.getItem('token')
+        const apiBase = import.meta.env.VITE_API_BASE_URL ? String(import.meta.env.VITE_API_BASE_URL).replace(/\/+$/, '') : ''
+        const baseHasApi = apiBase.endsWith('/api')
+        const endpointPath = `/ai/sessions/${sessionId}/messages/stream`
+        const fullPath = endpointPath.startsWith('/api') || baseHasApi ? endpointPath : `/api${endpointPath}`
+        const streamUrl = `${apiBase}${fullPath}`
+
+        const response = await fetch(streamUrl, {
+          method: 'POST',
+          headers: {
+            Authorization: token ? `Bearer ${token}` : '',
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            message,
+            context: baseContext,
+          }),
+        })
+
+        if (!response.ok || !response.body) {
+          throw new Error(`Stream failed: ${response.status}`)
+        }
+
+        const reader = response.body.getReader()
+        const decoder = new TextDecoder()
+        let buffer = ''
+
+        const applyAssistantContent = (content: string) => {
+          setChatMessages((current) =>
+            current.map((msg) => (msg.id === assistantId ? { ...msg, content } : msg)),
+          )
+        }
+
+        const applyFinal = (payload: StreamFinalPayload) => {
+          applyAssistantContent(payload.reply || '')
+          const actions = (payload.proposed_actions || []).map((action, index) => ({
+            ...action,
+            key: `${Date.now()}-${index}`,
+            running: false,
+            executed: false,
+            error: undefined,
+          }))
+          setProposedActions(actions)
+        }
+
+        let assistantText = ''
+        let done = false
+
+        while (!done) {
+          const { value, done: streamDone } = await reader.read()
+          if (streamDone) break
+          buffer += decoder.decode(value, { stream: true })
+
+          let boundary = buffer.indexOf('\n\n')
+          while (boundary !== -1) {
+            const rawEvent = buffer.slice(0, boundary)
+            buffer = buffer.slice(boundary + 2)
+
+            const lines = rawEvent.split('\n')
+            let eventName = 'message'
+            const dataLines: string[] = []
+            for (const line of lines) {
+              if (line.startsWith('event:')) {
+                eventName = line.slice(6).trim()
+              } else if (line.startsWith('data:')) {
+                dataLines.push(line.slice(5).trim())
+              }
+            }
+            const rawData = dataLines.join('\n')
+
+            if (eventName === 'token') {
+              try {
+                const parsed = JSON.parse(rawData) as { delta?: string }
+                if (parsed.delta) {
+                  assistantText += parsed.delta
+                  applyAssistantContent(assistantText)
+                }
+              } catch {
+                // ignore malformed token event
+              }
+            } else if (eventName === 'final') {
+              try {
+                const parsed = JSON.parse(rawData) as StreamFinalPayload
+                applyFinal(parsed)
+              } catch {
+                applyAssistantContent(assistantText)
+              }
+            } else if (eventName === 'error') {
+              throw new Error(rawData || 'Streaming error')
+            } else if (eventName === 'close') {
+              done = true
+              break
+            }
+
+            boundary = buffer.indexOf('\n\n')
+          }
+        }
+      }
     } catch {
       toast.push({ title: 'AI chat failed', description: 'Could not reach AI assistant. Please try again.', variant: 'error' })
     } finally {
       setChatLoading(false)
+    }
+  }
+
+  const executeProposedAction = async (actionKey: string) => {
+    const action = proposedActions.find((item) => item.key === actionKey)
+    if (!action || action.running || action.executed) return
+
+    const confirmed = window.confirm(`Allow AI to execute this action?\n\n${action.label}`)
+    if (!confirmed) return
+
+    setProposedActions((current) =>
+      current.map((item) => (item.key === actionKey ? { ...item, running: true, error: undefined } : item)),
+    )
+
+    try {
+      const result = await apiFetch('/ai/execute', {
+        method: 'POST',
+        body: JSON.stringify({
+          confirm: true,
+          method: action.method,
+          path: action.path,
+          body: action.body,
+        }),
+      })
+
+      setProposedActions((current) =>
+        current.map((item) =>
+          item.key === actionKey ? { ...item, running: false, executed: true, error: undefined } : item,
+        ),
+      )
+      toast.push({ title: 'AI action executed', description: action.label, variant: 'success' })
+      setChatMessages((current) => [
+        ...current,
+        {
+          id: Date.now(),
+          role: 'assistant',
+          content: `✅ Executed: ${action.label}\nResult: ${JSON.stringify(result)}`,
+          created_at: new Date().toISOString(),
+        },
+      ])
+      void load()
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Execution failed'
+      setProposedActions((current) =>
+        current.map((item) => (item.key === actionKey ? { ...item, running: false, error: message } : item)),
+      )
+      toast.push({ title: 'AI action failed', description: message, variant: 'error' })
+    }
+  }
+
+  const autoApprovePending = async () => {
+    try {
+      const response = (await apiFetch('/proposals/auto-approve-pending?limit=500', {
+        method: 'POST',
+      })) as AutoApproveResult
+      toast.push({
+        title: 'Auto-approve completed',
+        description: `Approved ${response.approved_count} proposals${response.failed.length ? `, failed ${response.failed.length}` : ''}.`,
+        variant: response.failed.length ? 'error' : 'success',
+      })
+      void load()
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Auto-approve failed'
+      toast.push({ title: 'Auto-approve failed', description: message, variant: 'error' })
     }
   }
 
@@ -304,6 +531,9 @@ export default function InboxPage() {
 
         <div className="flex items-center gap-2">
           <Badge variant={pendingCount > 0 ? 'warning' : 'success'}>{pendingCount} pending</Badge>
+          <Button variant="ghost" onClick={() => void autoApprovePending()}>
+            Auto-Approve All
+          </Button>
           <Button variant="secondary" onClick={() => void load()}>
             Refresh
           </Button>
@@ -574,6 +804,75 @@ export default function InboxPage() {
                   Send
                 </Button>
               </form>
+
+              <div className="flex flex-wrap gap-2">
+                {quickPrompts.map((prompt) => (
+                  <Button key={prompt} size="sm" variant="secondary" onClick={() => setChatInput(prompt)}>
+                    {prompt}
+                  </Button>
+                ))}
+              </div>
+
+              <label className="flex items-center gap-2 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-600">
+                <input
+                  type="checkbox"
+                  checked={autonomousMode}
+                  onChange={(event) => setAutonomousMode(event.target.checked)}
+                />
+                Autonomous AI mode (auto-execute available actions)
+              </label>
+
+              <label className="flex items-center gap-2 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-600">
+                <input
+                  type="checkbox"
+                  checked={backgroundMode}
+                  onChange={(event) => setBackgroundMode(event.target.checked)}
+                />
+                Background self-run mode (AI continues multi-step until done)
+              </label>
+
+              {backgroundMode ? (
+                <label className="flex items-center gap-2 text-xs text-slate-600">
+                  Max rounds:
+                  <input
+                    type="number"
+                    min={1}
+                    max={12}
+                    value={backgroundRounds}
+                    onChange={(event) => {
+                      const next = Number(event.target.value)
+                      setBackgroundRounds(Number.isFinite(next) ? next : 6)
+                    }}
+                    className="w-20 rounded border border-slate-200 px-2 py-1"
+                  />
+                </label>
+              ) : null}
+
+              {proposedActions.length > 0 ? (
+                <div className="rounded-xl border border-emerald-200 bg-emerald-50/50 p-3">
+                  <p className="text-xs font-semibold uppercase tracking-wide text-emerald-700">AI proposed actions</p>
+                  <div className="mt-2 space-y-2">
+                    {proposedActions.map((action) => (
+                      <div key={action.key} className="rounded-lg border border-emerald-100 bg-white p-2">
+                        <div className="flex flex-wrap items-center justify-between gap-2">
+                          <p className="text-sm text-slate-700">{action.label}</p>
+                          <Button
+                            size="sm"
+                            onClick={() => void executeProposedAction(action.key)}
+                            disabled={action.running || action.executed}
+                          >
+                            {action.executed ? 'Executed' : action.running ? 'Executing…' : 'Execute'}
+                          </Button>
+                        </div>
+                        <p className="mt-1 text-xs text-slate-500">
+                          {action.method} {action.path}
+                        </p>
+                        {action.error ? <p className="mt-1 text-xs text-rose-600">{action.error}</p> : null}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              ) : null}
             </CardContent>
           </Card>
         </div>
