@@ -1,6 +1,35 @@
 from datetime import datetime, date
 from typing import Optional, List, Dict, Any, Literal
 from pydantic import BaseModel, EmailStr
+from enum import Enum
+
+
+# Enums for engineering hierarchy
+class EngineerType(str, Enum):
+    plc_engineer = "plc_engineer"
+    software_engineer = "software_engineer"
+    mechanical_engineer = "mechanical_engineer"
+    electrical_engineer = "electrical_engineer"
+    hardware_engineer = "hardware_engineer"
+    design_3d_engineer = "design_3d_engineer"
+
+
+class EngineerLevel(str, Enum):
+    lead = "lead"
+    normal = "normal"
+
+
+class ProjectRole(str, Enum):
+    project_manager = "project_manager"
+    lead_engineer = "lead_engineer"
+    engineer = "engineer"
+
+
+class WorkLogStatus(str, Enum):
+    draft = "draft"
+    submitted = "submitted"
+    approved = "approved"
+    returned = "returned"
 
 
 class Token(BaseModel):
@@ -9,7 +38,7 @@ class Token(BaseModel):
 
 
 class UserBase(BaseModel):
-    email: EmailStr
+    email: str
     name: str
 
 

@@ -16,6 +16,10 @@ class User(Base):
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 
     roles = relationship("Role", secondary="user_roles", back_populates="users")
+    project_memberships = relationship("ProjectMember", foreign_keys="ProjectMember.user_id", back_populates="user")
+    engineer_profile = relationship("EngineerProfile", uselist=False, back_populates="user")
+    assigned_tasks = relationship("Task", foreign_keys="Task.assigned_to_user_id")
+    assigned_by_tasks = relationship("Task", foreign_keys="Task.assigned_by_user_id")
 
 
 class Role(Base):
@@ -73,6 +77,7 @@ class Project(Base):
     bom_items = relationship("BOMItem", back_populates="project", cascade="all, delete-orphan")
     work_logs = relationship("WorkLog", back_populates="project", cascade="all, delete-orphan")
     inspection_records = relationship("InspectionRecord", back_populates="project", cascade="all, delete-orphan")
+    members = relationship("ProjectMember", back_populates="project", cascade="all, delete-orphan")
 
 
 class Document(Base):
@@ -131,8 +136,23 @@ class Task(Base):
     completed_at = Column(DateTime(timezone=True), nullable=True)
     source_doc_id = Column(Integer, ForeignKey("documents.id"), nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
+    
+    # New fields for engineering hierarchy
+    created_by_user_id = Column(Integer, ForeignKey("users.id"), nullable=True)
+    assigned_to_user_id = Column(Integer, ForeignKey("users.id"), nullable=True)
+    assigned_by_user_id = Column(Integer, ForeignKey("users.id"), nullable=True)
+    parent_task_id = Column(Integer, ForeignKey("tasks.id"), nullable=True)
+    blocked_reason = Column(Text, nullable=True)
+    project_member_scope = Column(String, nullable=True)
 
     project = relationship("Project", back_populates="tasks")
+    owner = relationship("User", foreign_keys=[owner_id])
+    created_by = relationship("User", foreign_keys=[created_by_user_id])
+    assigned_to = relationship("User", foreign_keys=[assigned_to_user_id])
+    assigned_by = relationship("User", foreign_keys=[assigned_by_user_id])
+    parent_task = relationship("Task", remote_side="Task.id", back_populates="subtasks")
+    subtasks = relationship("Task", back_populates="parent_task")
+    comments = relationship("TaskComment", back_populates="task")
 
 
 class Issue(Base):
@@ -259,8 +279,18 @@ class WorkLog(Base):
     summary = Column(Text, nullable=False)
     derived_from_doc_id = Column(Integer, ForeignKey("documents.id"), nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
+    
+    # New fields for approval chain
+    status = Column(String, nullable=False, default="draft")  # 'draft', 'submitted', 'approved', 'returned'
+    submitted_to_user_id = Column(Integer, ForeignKey("users.id"), nullable=True)
+    approved_by_user_id = Column(Integer, ForeignKey("users.id"), nullable=True)
+    approved_at = Column(DateTime(timezone=True), nullable=True)
+    reject_reason = Column(Text, nullable=True)
 
     project = relationship("Project", back_populates="work_logs")
+    user = relationship("User", foreign_keys=[user_id])
+    submitted_to = relationship("User", foreign_keys=[submitted_to_user_id])
+    approved_by = relationship("User", foreign_keys=[approved_by_user_id])
 
 
 class InspectionRecord(Base):
@@ -369,3 +399,45 @@ class Message(Base):
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 
     sender = relationship("User")
+
+
+class EngineerProfile(Base):
+    __tablename__ = "engineer_profiles"
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), primary_key=True)
+    engineer_type = Column(String, nullable=False)
+    level = Column(String, nullable=False)  # 'lead' or 'normal'
+    title = Column(String, nullable=True)
+    is_active = Column(Boolean, nullable=False, default=True)
+
+    user = relationship("User", back_populates="engineer_profile")
+
+
+class ProjectMember(Base):
+    __tablename__ = "project_members"
+    id = Column(Integer, primary_key=True)
+    project_id = Column(Integer, ForeignKey("projects.id", ondelete="CASCADE"), nullable=False)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    project_role = Column(String, nullable=False)  # 'project_manager', 'lead_engineer', 'engineer'
+    engineer_type = Column(String, nullable=True)  # Required for lead_engineer/engineer roles
+    report_to_user_id = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    assigned_by_user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+    project = relationship("Project", back_populates="members")
+    user = relationship("User", foreign_keys=[user_id], back_populates="project_memberships")
+    report_to = relationship("User", foreign_keys=[report_to_user_id])
+    assigned_by = relationship("User", foreign_keys=[assigned_by_user_id])
+
+    __table_args__ = (UniqueConstraint("project_id", "user_id", name="uq_project_member"),)
+
+
+class TaskComment(Base):
+    __tablename__ = "task_comments"
+    id = Column(Integer, primary_key=True)
+    task_id = Column(Integer, ForeignKey("tasks.id", ondelete="CASCADE"), nullable=False)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    content = Column(Text, nullable=False)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+    task = relationship("Task", back_populates="comments")
+    user = relationship("User")

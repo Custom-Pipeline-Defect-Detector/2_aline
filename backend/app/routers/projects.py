@@ -2,7 +2,7 @@ from datetime import date, timedelta
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from app import models, schemas
-from app.rbac import PROJECTS_READ_ROLES, PROJECTS_WRITE_ROLES
+from app.rbac import PROJECTS_READ_ROLES, PROJECTS_WRITE_ROLES, require_project_access
 from app.deps import get_db, require_roles, get_current_user
 
 router = APIRouter(prefix="/projects", tags=["projects"])
@@ -68,7 +68,18 @@ def list_projects(db: Session = Depends(get_db)):
 
 
 @router.get("/{project_id}", response_model=schemas.ProjectDetail, dependencies=[Depends(require_roles(PROJECTS_READ_ROLES))])
-def get_project(project_id: int, db: Session = Depends(get_db)):
+def get_project(project_id: int, db: Session = Depends(get_db), current_user: models.User = Depends(get_current_user)):
+    # Check if user has access to this project (unless they're admin/manager)
+    user_roles = [role.name for role in current_user.roles]
+    if "Admin" not in user_roles and "Manager" not in user_roles:
+        # Check if user is assigned to this project
+        project_member = db.query(models.ProjectMember).filter(
+            models.ProjectMember.project_id == project_id,
+            models.ProjectMember.user_id == current_user.id
+        ).first()
+        if not project_member:
+            raise HTTPException(status_code=403, detail="Access to project denied")
+    
     project = db.query(models.Project).filter_by(id=project_id).first()
     if not project:
         raise HTTPException(status_code=404, detail="Project not found")
@@ -123,6 +134,17 @@ def update_project(
     db: Session = Depends(get_db),
     current_user: models.User = Depends(get_current_user),
 ):
+    # Check if user has access to this project (unless they're admin/manager)
+    user_roles = [role.name for role in current_user.roles]
+    if "Admin" not in user_roles and "Manager" not in user_roles:
+        # Check if user is assigned to this project
+        project_member = db.query(models.ProjectMember).filter(
+            models.ProjectMember.project_id == project_id,
+            models.ProjectMember.user_id == current_user.id
+        ).first()
+        if not project_member:
+            raise HTTPException(status_code=403, detail="Access to project denied")
+    
     project = db.query(models.Project).filter_by(id=project_id).first()
     if not project:
         raise HTTPException(status_code=404, detail="Project not found")
@@ -187,7 +209,18 @@ def update_project(
 
 
 @router.post("/{project_id}/milestones", response_model=schemas.MilestoneOut, dependencies=[Depends(require_roles(PROJECTS_WRITE_ROLES))])
-def create_milestone(project_id: int, payload: schemas.MilestoneCreate, db: Session = Depends(get_db)):
+def create_milestone(project_id: int, payload: schemas.MilestoneCreate, db: Session = Depends(get_db), current_user: models.User = Depends(get_current_user)):
+    # Check if user has access to this project (unless they're admin/manager)
+    user_roles = [role.name for role in current_user.roles]
+    if "Admin" not in user_roles and "Manager" not in user_roles:
+        # Check if user is assigned to this project
+        project_member = db.query(models.ProjectMember).filter(
+            models.ProjectMember.project_id == project_id,
+            models.ProjectMember.user_id == current_user.id
+        ).first()
+        if not project_member:
+            raise HTTPException(status_code=403, detail="Access to project denied")
+    
     project = db.query(models.Project).filter_by(id=project_id).first()
     if not project:
         raise HTTPException(status_code=404, detail="Project not found")
@@ -204,15 +237,38 @@ def create_milestone(project_id: int, payload: schemas.MilestoneCreate, db: Sess
 
 
 @router.get("/{project_id}/milestones", response_model=list[schemas.MilestoneOut], dependencies=[Depends(require_roles(PROJECTS_READ_ROLES))])
-def list_milestones(project_id: int, db: Session = Depends(get_db)):
+def list_milestones(project_id: int, db: Session = Depends(get_db), current_user: models.User = Depends(get_current_user)):
+    # Check if user has access to this project (unless they're admin/manager)
+    user_roles = [role.name for role in current_user.roles]
+    if "Admin" not in user_roles and "Manager" not in user_roles:
+        # Check if user is assigned to this project
+        project_member = db.query(models.ProjectMember).filter(
+            models.ProjectMember.project_id == project_id,
+            models.ProjectMember.user_id == current_user.id
+        ).first()
+        if not project_member:
+            raise HTTPException(status_code=403, detail="Access to project denied")
+    
     return db.query(models.Milestone).filter_by(project_id=project_id).order_by(models.Milestone.created_at.desc()).all()
 
 
 @router.patch("/milestones/{milestone_id}", response_model=schemas.MilestoneOut, dependencies=[Depends(require_roles(PROJECTS_WRITE_ROLES))])
-def update_milestone(milestone_id: int, payload: schemas.MilestoneUpdate, db: Session = Depends(get_db)):
+def update_milestone(milestone_id: int, payload: schemas.MilestoneUpdate, db: Session = Depends(get_db), current_user: models.User = Depends(get_current_user)):
     milestone = db.query(models.Milestone).filter_by(id=milestone_id).first()
     if not milestone:
         raise HTTPException(status_code=404, detail="Milestone not found")
+    
+    # Check if user has access to the project this milestone belongs to (unless they're admin/manager)
+    user_roles = [role.name for role in current_user.roles]
+    if "Admin" not in user_roles and "Manager" not in user_roles:
+        # Check if user is assigned to this project
+        project_member = db.query(models.ProjectMember).filter(
+            models.ProjectMember.project_id == milestone.project_id,
+            models.ProjectMember.user_id == current_user.id
+        ).first()
+        if not project_member:
+            raise HTTPException(status_code=403, detail="Access to project denied")
+    
     for field, value in payload.model_dump(exclude_unset=True).items():
         setattr(milestone, field, value)
     db.commit()
@@ -221,10 +277,22 @@ def update_milestone(milestone_id: int, payload: schemas.MilestoneUpdate, db: Se
 
 
 @router.delete("/milestones/{milestone_id}", status_code=204, dependencies=[Depends(require_roles(PROJECTS_WRITE_ROLES))])
-def delete_milestone(milestone_id: int, db: Session = Depends(get_db)):
+def delete_milestone(milestone_id: int, db: Session = Depends(get_db), current_user: models.User = Depends(get_current_user)):
     milestone = db.query(models.Milestone).filter_by(id=milestone_id).first()
     if not milestone:
         raise HTTPException(status_code=404, detail="Milestone not found")
+    
+    # Check if user has access to the project this milestone belongs to (unless they're admin/manager)
+    user_roles = [role.name for role in current_user.roles]
+    if "Admin" not in user_roles and "Manager" not in user_roles:
+        # Check if user is assigned to this project
+        project_member = db.query(models.ProjectMember).filter(
+            models.ProjectMember.project_id == milestone.project_id,
+            models.ProjectMember.user_id == current_user.id
+        ).first()
+        if not project_member:
+            raise HTTPException(status_code=403, detail="Access to project denied")
+    
     db.delete(milestone)
     db.commit()
     return None

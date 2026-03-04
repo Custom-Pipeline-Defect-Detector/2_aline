@@ -6,6 +6,7 @@ from app.core.config import settings
 from pathlib import Path
 
 ROLE_NAMES = ["Admin", "Manager", "PM", "Sales", "Engineer", "Technician", "QC", "Viewer"]
+ENGINEER_TYPES = ["plc_engineer", "software_engineer", "mechanical_engineer", "electrical_engineer", "hardware_engineer", "design_3d_engineer"]
 
 
 def seed():
@@ -141,6 +142,116 @@ def seed():
             )
 
             db.commit()
+
+        # Add engineering hierarchy sample data
+        if db.query(models.EngineerProfile).count() == 0:
+            # Create engineering users
+            manager_user = db.query(models.User).filter_by(email="manager@aline.local").first()
+            if not manager_user:
+                manager_user = models.User(
+                    email="manager@aline.local",
+                    name="Project Manager",
+                    password_hash=get_password_hash("Welcome123!"),
+                    is_active=True,
+                )
+                manager_user.roles = [roles["Manager"]]
+                db.add(manager_user)
+
+            pm_user = db.query(models.User).filter_by(email="pm@aline.local").first()
+            if not pm_user:
+                pm_user = models.User(
+                    email="pm@aline.local",
+                    name="Project Manager John",
+                    password_hash=get_password_hash("Welcome123!"),
+                    is_active=True,
+                )
+                pm_user.roles = [roles["PM"]]
+                db.add(pm_user)
+
+            # Create engineer profiles
+            engineers = []
+            for i, eng_type in enumerate(ENGINEER_TYPES):
+                for level in ["lead", "normal"]:
+                    email = f"{eng_type.split('_')[0]}_{level}@aline.local"
+                    user = db.query(models.User).filter_by(email=email).first()
+                    if not user:
+                        user = models.User(
+                            email=email,
+                            name=f"{eng_type.replace('_', ' ').title()} {level.title()}",
+                            password_hash=get_password_hash("Welcome123!"),
+                            is_active=True,
+                        )
+                        user.roles = [roles["Engineer"]]
+                        db.add(user)
+                        db.flush()  # Get the user ID
+
+                    profile = models.EngineerProfile(
+                        user_id=user.id,
+                        engineer_type=eng_type,
+                        level=level
+                    )
+                    db.add(profile)
+                    engineers.append({"user": user, "profile": profile})
+
+            db.commit()
+
+            # Create project assignments
+            project_alpha = db.query(models.Project).filter_by(project_code="ALPHA-001").first()
+            project_beta = db.query(models.Project).filter_by(project_code="VECTOR-002").first()
+
+            if project_alpha and project_beta:
+                # Assign PM to projects
+                pm_assignment = models.ProjectMember(
+                    project_id=project_alpha.id,
+                    user_id=pm_user.id,
+                    project_role="project_manager",
+                    assigned_by_user_id=admin.id
+                )
+                db.add(pm_assignment)
+
+                # Assign lead engineers to project alpha
+                for eng_type in ENGINEER_TYPES[:3]:  # Use first 3 types for alpha project
+                    lead_user = db.query(models.User).join(models.EngineerProfile).filter(
+                        models.EngineerProfile.engineer_type == eng_type,
+                        models.EngineerProfile.level == "lead"
+                    ).first()
+                    
+                    if lead_user:
+                        lead_assignment = models.ProjectMember(
+                            project_id=project_alpha.id,
+                            user_id=lead_user.id,
+                            project_role="lead_engineer",
+                            engineer_type=eng_type,
+                            report_to_user_id=pm_user.id,
+                            assigned_by_user_id=pm_user.id
+                        )
+                        db.add(lead_assignment)
+
+                # Assign normal engineers to project alpha under their respective leads
+                for eng_type in ENGINEER_TYPES[:3]:
+                    lead_user = db.query(models.User).join(models.EngineerProfile).filter(
+                        models.EngineerProfile.engineer_type == eng_type,
+                        models.EngineerProfile.level == "lead"
+                    ).first()
+                    
+                    normal_user = db.query(models.User).join(models.EngineerProfile).filter(
+                        models.EngineerProfile.engineer_type == eng_type,
+                        models.EngineerProfile.level == "normal"
+                    ).first()
+                    
+                    if lead_user and normal_user:
+                        engineer_assignment = models.ProjectMember(
+                            project_id=project_alpha.id,
+                            user_id=normal_user.id,
+                            project_role="engineer",
+                            engineer_type=eng_type,
+                            report_to_user_id=lead_user.id,
+                            assigned_by_user_id=lead_user.id
+                        )
+                        db.add(engineer_assignment)
+
+                db.commit()
+
     finally:
         db.close()
 

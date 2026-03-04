@@ -6,6 +6,7 @@ import Button from '../components/ui/Button'
 import { Card } from '../components/ui/Card'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '../components/ui/Table'
 import Input from '../components/ui/Input'
+import ProjectTeamManagement from '../components/ProjectTeamManagement'
 
 interface ProjectItem {
   id: number
@@ -124,8 +125,8 @@ export default function ProjectsPage() {
         </div>
 
         <div className="flex items-center gap-2">
-          <Button variant="secondary" onClick={() => void load()} loading={loading}>
-            Refresh
+          <Button variant="secondary" onClick={() => void load()} disabled={loading}>
+            {loading ? 'Loading...' : 'Refresh'}
           </Button>
           <Button variant="secondary">New Project</Button>
         </div>

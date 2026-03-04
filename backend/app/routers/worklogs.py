@@ -1,9 +1,11 @@
+from datetime import datetime
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
 from app import models, schemas
 from app.rbac import TASKS_READ_ROLES, TASKS_WRITE_ROLES
 from app.deps import get_db, get_current_user, require_roles
+from app.rbac import has_role
 
 router = APIRouter(prefix="/worklogs", tags=["worklogs"])
 
@@ -78,6 +80,7 @@ def create_worklog(
         date=payload.date,
         summary=payload.summary,
         derived_from_doc_id=payload.derived_from_doc_id,
+        status="draft"  # Default to draft status
     )
     db.add(log)
     db.commit()
@@ -96,6 +99,135 @@ def create_worklog(
         project_code=log.project.project_code if log.project else None,
         user_name=None,
     )
+
+
+@router.post("/{log_id}/submit", dependencies=[Depends(require_roles(TASKS_WRITE_ROLES))])
+def submit_worklog(
+    log_id: int,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_user),
+):
+    """Submit a worklog for approval based on the reporting hierarchy"""
+    log = db.query(models.WorkLog).filter_by(id=log_id).first()
+    if not log:
+        raise HTTPException(status_code=404, detail="Work log not found")
+    
+    # Check if user owns this worklog
+    if log.user_id != current_user.id:
+        raise HTTPException(status_code=403, detail="Cannot submit worklog that doesn't belong to you")
+    
+    # Check if worklog is already submitted/approved
+    if log.status in ["submitted", "approved"]:
+        raise HTTPException(status_code=400, detail="Worklog already submitted or approved")
+    
+    # Determine who to submit to based on hierarchy
+    # Find the project member record for the user
+    project_member = db.query(models.ProjectMember).filter(
+        models.ProjectMember.project_id == log.project_id,
+        models.ProjectMember.user_id == current_user.id
+    ).first()
+    
+    if not project_member:
+        raise HTTPException(status_code=400, detail="User not assigned to this project")
+    
+    submitted_to_user_id = None
+    
+    if project_member.project_role == "engineer":
+        # Engineer submits to their lead
+        submitted_to_user_id = project_member.report_to_user_id
+    elif project_member.project_role == "lead_engineer":
+        # Lead engineer submits to PM
+        submitted_to_user_id = project_member.report_to_user_id
+    elif project_member.project_role == "project_manager":
+        # PM submits to manager/admin (find first admin user)
+        admin_user = db.query(models.User).join(models.UserRole).join(models.Role).filter(
+            models.Role.name == "admin"
+        ).first()
+        if admin_user:
+            submitted_to_user_id = admin_user.id
+        else:
+            # If no admin, submit to any manager
+            manager_user = db.query(models.User).join(models.UserRole).join(models.Role).filter(
+                models.Role.name == "manager"
+            ).first()
+            if manager_user:
+                submitted_to_user_id = manager_user.id
+    
+    if not submitted_to_user_id:
+        raise HTTPException(status_code=400, detail="Could not determine approver for worklog submission")
+    
+    # Update worklog status and submitted_to
+    log.status = "submitted"
+    log.submitted_to_user_id = submitted_to_user_id
+    db.commit()
+    db.refresh(log)
+    
+    _log_audit(db, current_user.id, "submitted", log.id, {"status": "draft"}, {"status": "submitted"})
+    db.commit()
+    
+    return {"message": "Worklog submitted successfully", "submitted_to_user_id": submitted_to_user_id}
+
+
+@router.post("/{log_id}/approve", dependencies=[Depends(require_roles(TASKS_WRITE_ROLES))])
+def approve_worklog(
+    log_id: int,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_user),
+):
+    """Approve a submitted worklog"""
+    log = db.query(models.WorkLog).filter_by(id=log_id).first()
+    if not log:
+        raise HTTPException(status_code=404, detail="Work log not found")
+    
+    # Check if this worklog is submitted to the current user
+    if log.submitted_to_user_id != current_user.id:
+        raise HTTPException(status_code=403, detail="Worklog not submitted to you for approval")
+    
+    if log.status != "submitted":
+        raise HTTPException(status_code=400, detail="Worklog is not in submitted status")
+    
+    # Approve the worklog
+    log.status = "approved"
+    log.approved_by_user_id = current_user.id
+    log.approved_at = datetime.utcnow()
+    db.commit()
+    db.refresh(log)
+    
+    _log_audit(db, current_user.id, "approved", log.id, {"status": "submitted"}, {"status": "approved"})
+    db.commit()
+    
+    return {"message": "Worklog approved successfully"}
+
+
+@router.post("/{log_id}/return", dependencies=[Depends(require_roles(TASKS_WRITE_ROLES))])
+def return_worklog(
+    log_id: int,
+    reject_reason: str,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_user),
+):
+    """Return a worklog for revision"""
+    log = db.query(models.WorkLog).filter_by(id=log_id).first()
+    if not log:
+        raise HTTPException(status_code=404, detail="Work log not found")
+    
+    # Check if this worklog is submitted to the current user
+    if log.submitted_to_user_id != current_user.id:
+        raise HTTPException(status_code=403, detail="Worklog not submitted to you for approval")
+    
+    if log.status != "submitted":
+        raise HTTPException(status_code=400, detail="Worklog is not in submitted status")
+    
+    # Return the worklog
+    log.status = "returned"
+    log.reject_reason = reject_reason
+    db.commit()
+    db.refresh(log)
+    
+    _log_audit(db, current_user.id, "returned", log.id, {"status": "submitted"}, {"status": "returned"})
+    db.commit()
+    
+    return {"message": "Worklog returned for revision", "reject_reason": reject_reason}
 
 
 @router.patch("/{log_id}", response_model=schemas.WorkLogOut, dependencies=[Depends(require_roles(TASKS_WRITE_ROLES))])

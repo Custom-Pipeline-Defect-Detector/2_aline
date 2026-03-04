@@ -6,6 +6,7 @@ from sqlalchemy.orm import Session
 from app import models, schemas
 from app.rbac import TASKS_READ_ROLES, TASKS_WRITE_ROLES
 from app.deps import get_db, get_current_user, require_roles
+from app.rbac import has_role
 
 router = APIRouter(prefix="/tasks", tags=["tasks"])
 
@@ -46,6 +47,19 @@ def list_tasks(
     mine: bool | None = False,
 ):
     query = db.query(models.Task)
+    
+    # Apply project access filtering (unless admin/manager)
+    user_roles = [role.name for role in current_user.roles]
+    if "Admin" not in user_roles and "Manager" not in user_roles:
+        # Get all projects the user has access to
+        accessible_projects = db.query(models.ProjectMember.project_id).filter(
+            models.ProjectMember.user_id == current_user.id
+        ).subquery()
+        query = query.filter(models.Task.project_id.in_(accessible_projects))
+    else:
+        # Admins/managers can see all tasks
+        pass
+    
     if project_id:
         query = query.filter(models.Task.project_id == project_id)
     if owner_id:
@@ -87,6 +101,53 @@ def create_task(
     current_user: models.User = Depends(get_current_user),
 ):
     project = _resolve_project(db, payload.project_id, payload.project_code)
+    
+    # Check permissions for task assignment based on engineering hierarchy
+    assigned_to_user_id = payload.owner_id  # Using owner_id as assigned_to_user_id for compatibility
+    if assigned_to_user_id:
+        # Check if current user can assign tasks to the target user
+        can_assign = False
+        
+        # Admins and managers can assign to anyone
+        if has_role(current_user, ["admin", "manager"]):
+            can_assign = True
+        else:
+            # Check if current user is PM of the project
+            pm_member = db.query(models.ProjectMember).filter(
+                models.ProjectMember.project_id == project.id,
+                models.ProjectMember.user_id == current_user.id,
+                models.ProjectMember.project_role == "project_manager"
+            ).first()
+            
+            if pm_member:
+                # PM can assign to leads and engineers in the project
+                target_member = db.query(models.ProjectMember).filter(
+                    models.ProjectMember.project_id == project.id,
+                    models.ProjectMember.user_id == assigned_to_user_id
+                ).first()
+                if target_member:
+                    can_assign = True
+            else:
+                # Check if current user is a lead in the project
+                lead_member = db.query(models.ProjectMember).filter(
+                    models.ProjectMember.project_id == project.id,
+                    models.ProjectMember.user_id == current_user.id,
+                    models.ProjectMember.project_role == "lead_engineer"
+                ).first()
+                
+                if lead_member:
+                    # Lead can assign to engineers who report to them
+                    target_member = db.query(models.ProjectMember).filter(
+                        models.ProjectMember.project_id == project.id,
+                        models.ProjectMember.user_id == assigned_to_user_id,
+                        models.ProjectMember.report_to_user_id == current_user.id
+                    ).first()
+                    if target_member:
+                        can_assign = True
+        
+        if not can_assign:
+            raise HTTPException(status_code=403, detail="Insufficient permissions to assign task to this user")
+    
     task = models.Task(
         project_id=project.id,
         title=payload.title,
@@ -97,6 +158,9 @@ def create_task(
         priority=payload.priority or "med",
         type=payload.type or "engineering",
         source_doc_id=payload.source_doc_id,
+        created_by_user_id=current_user.id,
+        assigned_to_user_id=payload.owner_id,
+        assigned_by_user_id=current_user.id
     )
     db.add(task)
     db.commit()
@@ -132,6 +196,17 @@ def update_task(
     task = db.query(models.Task).filter_by(id=task_id).first()
     if not task:
         raise HTTPException(status_code=404, detail="Task not found")
+    
+    # Check if user has access to the project this task belongs to (unless they're admin/manager)
+    user_roles = [role.name for role in current_user.roles]
+    if "Admin" not in user_roles and "Manager" not in user_roles:
+        # Check if user is assigned to this project
+        project_member = db.query(models.ProjectMember).filter(
+            models.ProjectMember.project_id == task.project_id,
+            models.ProjectMember.user_id == current_user.id
+        ).first()
+        if not project_member:
+            raise HTTPException(status_code=403, detail="Access to project denied")
 
     before = {
         "title": task.title,
@@ -184,6 +259,18 @@ def delete_task(
     task = db.query(models.Task).filter_by(id=task_id).first()
     if not task:
         raise HTTPException(status_code=404, detail="Task not found")
+    
+    # Check if user has access to the project this task belongs to (unless they're admin/manager)
+    user_roles = [role.name for role in current_user.roles]
+    if "Admin" not in user_roles and "Manager" not in user_roles:
+        # Check if user is assigned to this project
+        project_member = db.query(models.ProjectMember).filter(
+            models.ProjectMember.project_id == task.project_id,
+            models.ProjectMember.user_id == current_user.id
+        ).first()
+        if not project_member:
+            raise HTTPException(status_code=403, detail="Access to project denied")
+    
     before = {"title": task.title, "status": task.status}
     db.delete(task)
     db.commit()

@@ -16,6 +16,7 @@ from app.routers import (
     quality,
     document_processing,
     projects,
+    project_team,
     customers,
     notifications,
     tasks,
@@ -76,6 +77,7 @@ api_router.include_router(inbox.router)
 api_router.include_router(quality.router)
 api_router.include_router(document_processing.router)
 api_router.include_router(projects.router)
+api_router.include_router(project_team.router)
 api_router.include_router(customers.router)
 api_router.include_router(notifications.router)
 api_router.include_router(tasks.router)

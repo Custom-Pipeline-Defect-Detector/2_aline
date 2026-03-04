@@ -3,9 +3,14 @@ from typing import Dict, Any
 from sqlalchemy.orm import Session
 from sqlalchemy import func, desc
 from datetime import datetime, timedelta
-from ..database import get_db
-from ..models import Document, Customer, Project, Proposal, User, Message, Notification, Task, WorkLog, NCR, Issue, InspectionRecord
-from ..auth import get_current_user
+
+from app.database import get_db
+from app.models import Document, Customer, Project, Proposal, User, Message, Notification, Task, WorkLog, NCR, Issue, InspectionRecord, ProjectMember
+from app.auth import get_current_user
+from app.deps import require_roles
+from app.rbac import DASHBOARD_READ_ROLES
+from app import schemas
+from app.services.dashboard import build_ncr_weekly_counts, build_engineering_dashboard, build_pm_dashboard
 
 router = APIRouter()
 
@@ -188,3 +193,12 @@ async def get_dashboard_stats(
         "recent_activity": recent_activities,
         "top_contributors": top_contributors_data
     }
+
+
+@router.get("/dashboard/engineering", response_model=schemas.DashboardEngineering, dependencies=[Depends(require_roles(DASHBOARD_READ_ROLES))])
+def get_engineering_dashboard(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Get engineering dashboard data showing projects, tasks, and reporting status"""
+    return build_engineering_dashboard(db, current_user)

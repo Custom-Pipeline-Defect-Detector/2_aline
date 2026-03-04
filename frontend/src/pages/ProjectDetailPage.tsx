@@ -6,6 +6,7 @@ import Button from '../components/ui/Button'
 import { Card } from '../components/ui/Card'
 import Input from '../components/ui/Input'
 import EditableGrid from '../components/EditableGrid'
+import ProjectTeamManagement from '../components/ProjectTeamManagement'
 
 interface ProjectDetail {
   id: number
@@ -279,21 +280,21 @@ export default function ProjectDetailPage() {
 
           <div className="mt-3 flex flex-wrap items-center gap-2">
             <Badge variant="info">{project.stage}</Badge>
-            <Badge variant={healthVariant(project.health)} dot>
+            <Badge variant={healthVariant(project.health)}>
               {project.health}
             </Badge>
-            <Badge variant={riskVariant(project.risk)} dot>
+            <Badge variant={riskVariant(project.risk)}>
               {project.risk ?? 'low'} risk
             </Badge>
           </div>
         </div>
 
         <div className="flex items-center gap-2">
-          <Button variant="secondary" onClick={() => void load()} loading={loading}>
-            Refresh
+          <Button variant="secondary" onClick={() => void load()} disabled={loading}>
+            {loading ? 'Loading...' : 'Refresh'}
           </Button>
-          <Button onClick={saveProject} loading={saving}>
-            Save changes
+          <Button onClick={saveProject} disabled={saving}>
+            {saving ? 'Saving...' : 'Save changes'}
           </Button>
         </div>
       </div>
@@ -484,8 +485,8 @@ export default function ProjectDetailPage() {
         </div>
 
         <div className="mt-4 flex flex-wrap gap-2">
-          <Button onClick={saveProject} loading={saving}>
-            Save changes
+          <Button onClick={saveProject} disabled={saving}>
+            {saving ? 'Saving...' : 'Save changes'}
           </Button>
           <Button
             variant="secondary"
@@ -625,7 +626,7 @@ export default function ProjectDetailPage() {
                     <div className="truncate font-medium text-slate-800">{issue.description}</div>
                     <div className="text-xs text-slate-500">Issue #{issue.id}</div>
                   </div>
-                  <Badge variant={severityVariant(issue.severity)} dot>
+                  <Badge variant={severityVariant(issue.severity)}>
                     {issue.severity}
                   </Badge>
                 </li>
@@ -649,7 +650,7 @@ export default function ProjectDetailPage() {
                     <div className="truncate font-medium text-slate-800">{ncr.description}</div>
                     <div className="text-xs text-slate-500">NCR #{ncr.id}</div>
                   </div>
-                  <Badge variant={ncr.status === 'closed' ? 'success' : 'warning'} dot>
+                  <Badge variant={ncr.status === 'closed' ? 'success' : 'warning'}>
                     {ncr.status}
                   </Badge>
                 </li>
@@ -700,6 +701,14 @@ export default function ProjectDetailPage() {
           onDelete={deleteBomItems}
           statusField="status"
         />
+      </Card>
+
+      {/* Team Management */}
+      <Card className="p-4">
+        <div className="text-sm font-semibold text-slate-900">Team Management</div>
+        <div className="mt-3">
+          <ProjectTeamManagement projectId={Number(id)} />
+        </div>
       </Card>
 
       {/* History */}

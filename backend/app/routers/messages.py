@@ -9,6 +9,7 @@ from sqlalchemy.orm import Session
 
 from app import models, schemas
 from app.deps import get_current_user, get_db
+from app.rbac import has_role
 
 router = APIRouter(prefix="/messages", tags=["messages"])
 
@@ -153,3 +154,52 @@ def send_room_message(
     db.commit()
     db.refresh(message)
     return message
+
+
+@router.post("/project/{project_id}", response_model=schemas.MessageRoomOut)
+def get_or_create_project_room(
+    project_id: int,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_user),
+):
+    """Get or create a project-specific chat room and ensure all project members are added"""
+    # Check if user has access to this project (is a project member)
+    project_member = db.query(models.ProjectMember).filter(
+        models.ProjectMember.project_id == project_id,
+        models.ProjectMember.user_id == current_user.id
+    ).first()
+    
+    if not project_member and not has_role(current_user, ["admin", "manager"]):
+        raise HTTPException(status_code=403, detail="Not authorized to access this project chat")
+    
+    # Try to find existing project room
+    room = db.query(models.MessageRoom).filter(
+        models.MessageRoom.type == f"project:{project_id}"
+    ).first()
+    
+    if not room:
+        # Create new project room
+        room = models.MessageRoom(type=f"project:{project_id}")
+        db.add(room)
+        db.flush()
+    else:
+        # Refresh the room to ensure it's up to date
+        db.refresh(room)
+    
+    # Get all project members and add them to the room if not already present
+    project_members = db.query(models.ProjectMember).filter(
+        models.ProjectMember.project_id == project_id
+    ).all()
+    
+    for member in project_members:
+        existing_member = db.query(models.ChatRoomMember).filter(
+            models.ChatRoomMember.room_id == room.id,
+            models.ChatRoomMember.user_id == member.user_id
+        ).first()
+        
+        if not existing_member:
+            db.add(models.ChatRoomMember(room_id=room.id, user_id=member.user_id))
+    
+    db.commit()
+    db.refresh(room)
+    return room

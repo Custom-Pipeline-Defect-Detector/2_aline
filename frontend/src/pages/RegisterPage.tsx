@@ -8,6 +8,17 @@ import { useToast } from '../components/Toast'
 
 const REGISTERABLE_ROLES = ['Viewer', 'Sales', 'Engineer', 'Technician', 'QC', 'PM', 'Manager']
 
+const ENGINEER_TYPES = [
+  'plc_engineer',
+  'software_engineer', 
+  'mechanical_engineer',
+  'electrical_engineer',
+  'hardware_engineer',
+  'design_3d_engineer'
+];
+
+const ENGINEER_LEVELS = ['lead', 'normal'];
+
 export default function RegisterPage() {
   const navigate = useNavigate()
   const [email, setEmail] = useState('')
@@ -15,6 +26,8 @@ export default function RegisterPage() {
   const [password, setPassword] = useState('')
   const [confirmPassword, setConfirmPassword] = useState('')
   const [roleName, setRoleName] = useState('Viewer')
+  const [engineerType, setEngineerType] = useState('')
+  const [engineerLevel, setEngineerLevel] = useState('')
   const [error, setError] = useState('')
   const toast = useToast()
 
@@ -28,16 +41,28 @@ export default function RegisterPage() {
     }
 
     try {
-      await registerAccount({ email, name, password, role_name: roleName || undefined })
-      toast.push({ title: 'Account created', description: 'Please sign in with your new account.', variant: 'success' })
-      navigate('/login')
+      const registrationData: any = { email, name, password, role_name: roleName || undefined };
+      
+      // Add engineer-specific fields if role is Engineer
+      if (roleName === 'Engineer') {
+        if (!engineerType || !engineerLevel) {
+          setError('Please select both engineer type and level.');
+          return;
+        }
+        registrationData.engineer_type = engineerType;
+        registrationData.engineer_level = engineerLevel;
+      }
+      
+      await registerAccount(registrationData);
+      toast.push({ title: 'Account created', description: 'Please sign in with your new account.', variant: 'success' });
+      navigate('/login');
     } catch (err) {
       if (err instanceof ApiError && err.status === 400) {
-        setError('Registration failed. Please verify your details and selected role.')
+        setError('Registration failed. Please verify your details and selected role.');
       } else {
-        setError('Registration failed. Please try again.')
+        setError('Registration failed. Please try again.');
       }
-      toast.push({ title: 'Registration failed', variant: 'error' })
+      toast.push({ title: 'Registration failed', variant: 'error' });
     }
   }
 
@@ -125,6 +150,52 @@ export default function RegisterPage() {
               ))}
             </select>
           </div>
+          
+          {/* Show engineer-specific fields when role is Engineer */}
+          {roleName === 'Engineer' && (
+            <>
+              <div>
+                <label className="text-sm" htmlFor="engineer-type">
+                  Engineer Type
+                </label>
+                <select
+                  id="engineer-type"
+                  className="mt-1 w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-800 shadow-sm focus:border-slate-400 focus:outline-none focus:ring-2 focus:ring-slate-200"
+                  value={engineerType}
+                  onChange={(event) => setEngineerType(event.target.value)}
+                  required
+                >
+                  <option value="">Select engineer type</option>
+                  {ENGINEER_TYPES.map((type) => (
+                    <option key={type} value={type}>
+                      {type.replace('_', ' ').replace(/\b\w/g, l => l.toUpperCase())}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              
+              <div>
+                <label className="text-sm" htmlFor="engineer-level">
+                  Engineer Level
+                </label>
+                <select
+                  id="engineer-level"
+                  className="mt-1 w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-800 shadow-sm focus:border-slate-400 focus:outline-none focus:ring-2 focus:ring-slate-200"
+                  value={engineerLevel}
+                  onChange={(event) => setEngineerLevel(event.target.value)}
+                  required
+                >
+                  <option value="">Select engineer level</option>
+                  {ENGINEER_LEVELS.map((level) => (
+                    <option key={level} value={level}>
+                      {level.charAt(0).toUpperCase() + level.slice(1)}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            </>
+          )}
+          
           <Button className="w-full" type="submit">
             Create account
           </Button>
@@ -139,3 +210,5 @@ export default function RegisterPage() {
     </div>
   )
 }
+
+

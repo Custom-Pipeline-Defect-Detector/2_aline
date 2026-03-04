@@ -6,12 +6,18 @@ import Button from '../components/ui/Button'
 import { Card, CardContent, CardHeader } from '../components/ui/Card'
 import Input from '../components/ui/Input'
 
-type ChatMode = 'direct' | 'global'
+type ChatMode = 'direct' | 'global' | 'project'
 
 interface MessageUser {
   id: number
   name: string
   email: string
+}
+
+interface Project {
+  id: number
+  name: string
+  project_code: string
 }
 
 interface ChatMessage {
@@ -52,21 +58,28 @@ export default function MessagesPage() {
 
   const [users, setUsers] = useState<MessageUser[]>([])
   const [selectedUser, setSelectedUser] = useState<MessageUser | null>(null)
+  const [projects, setProjects] = useState<Project[]>([])
+  const [selectedProject, setSelectedProject] = useState<Project | null>(null)
 
   const [globalRoomId, setGlobalRoomId] = useState<number | null>(null)
   const [directRoomId, setDirectRoomId] = useState<number | null>(null)
+  const [projectRoomId, setProjectRoomId] = useState<number | null>(null)
 
   const [globalMessages, setGlobalMessages] = useState<ChatMessage[]>([])
   const [directMessages, setDirectMessages] = useState<ChatMessage[]>([])
+  const [projectMessages, setProjectMessages] = useState<ChatMessage[]>([])
   const [globalInput, setGlobalInput] = useState('')
   const [directInput, setDirectInput] = useState('')
+  const [projectInput, setProjectInput] = useState('')
   const [sending, setSending] = useState(false)
 
   const [globalLoading, setGlobalLoading] = useState(false)
   const [directLoading, setDirectLoading] = useState(false)
+  const [projectLoading, setProjectLoading] = useState(false)
 
   const [globalError, setGlobalError] = useState('')
   const [directError, setDirectError] = useState('')
+  const [projectError, setProjectError] = useState('')
 
   // Global unseen dot
   const [hasUnseenGlobal, setHasUnseenGlobal] = useState(false)
@@ -108,14 +121,19 @@ export default function MessagesPage() {
     try {
       loadLastSeenFromStorage()
 
-      const [globalRoom, usersData] = await Promise.all([
+      const [globalRoom, usersData, projectsData] = await Promise.all([
         apiFetch('/messages/global') as Promise<MessageRoom>,
         apiFetch('/messages/users') as Promise<MessageUser[]>,
+        apiFetch('/projects/my') as Promise<Project[]>, // Get user's projects
       ])
       setGlobalRoomId(globalRoom.id)
       setUsers(usersData)
+      setProjects(projectsData)
       if (usersData.length > 0) {
         setSelectedUser(usersData[0])
+      }
+      if (projectsData.length > 0) {
+        setSelectedProject(projectsData[0])
       }
     } catch {
       setError('Unable to load messages. Please refresh.')
@@ -128,21 +146,40 @@ export default function MessagesPage() {
     if (target === 'global') {
       setGlobalLoading(true)
       setGlobalError('')
-    } else {
+    } else if (target === 'direct') {
       setDirectLoading(true)
       setDirectError('')
+    } else { // project
+      setProjectLoading(true)
+      setProjectError('')
     }
 
     try {
       const data = (await apiFetch(`/messages/rooms/${roomId}`)) as ChatMessage[]
       if (target === 'global') setGlobalMessages(data)
-      else setDirectMessages(data)
+      else if (target === 'direct') setDirectMessages(data)
+      else setProjectMessages(data)
     } catch {
       if (target === 'global') setGlobalError('Failed to load global messages.')
-      else setDirectError('Failed to load direct messages.')
+      else if (target === 'direct') setDirectError('Failed to load direct messages.')
+      else setProjectError('Failed to load project messages.')
     } finally {
       if (target === 'global') setGlobalLoading(false)
-      else setDirectLoading(false)
+      else if (target === 'direct') setDirectLoading(false)
+      else setProjectLoading(false)
+    }
+  }
+
+  const openProjectRoom = async (project: Project) => {
+    setProjectLoading(true)
+    setProjectError('')
+    try {
+      const room = (await apiFetch(`/messages/project/${project.id}`, { method: 'POST' })) as MessageRoom
+      setProjectRoomId(room.id)
+      await loadMessages(room.id, 'project')
+    } catch {
+      setProjectError('Failed to open project chat room.')
+      setProjectLoading(false)
     }
   }
 
@@ -206,6 +243,19 @@ export default function MessagesPage() {
   useEffect(() => {
     selectedUserIdRef.current = selectedUser?.id ?? null
   }, [selectedUser?.id])
+
+  useEffect(() => {
+    if (!selectedProject) {
+      setProjectRoomId(null)
+      setProjectMessages([])
+      return
+    }
+
+    void (async () => {
+      await openProjectRoom(selectedProject)
+    })()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedProject?.id])
 
   useEffect(() => {
     if (!selectedUser) {
@@ -446,7 +496,7 @@ export default function MessagesPage() {
               type="button"
               onClick={() => setMode('global')}
               className={[
-                'relative w-1/2 rounded-lg px-3 py-2 text-sm font-medium transition sm:w-auto',
+                'relative w-1/3 rounded-lg px-3 py-2 text-sm font-medium transition sm:w-auto',
                 mode === 'global' ? 'bg-slate-900 text-white' : 'text-slate-700 hover:bg-slate-50',
               ].join(' ')}
             >
@@ -460,7 +510,7 @@ export default function MessagesPage() {
               type="button"
               onClick={() => setMode('direct')}
               className={[
-                'relative w-1/2 rounded-lg px-3 py-2 text-sm font-medium transition sm:w-auto',
+                'relative w-1/3 rounded-lg px-3 py-2 text-sm font-medium transition sm:w-auto',
                 mode === 'direct' ? 'bg-slate-900 text-white' : 'text-slate-700 hover:bg-slate-50',
               ].join(' ')}
             >
@@ -468,6 +518,17 @@ export default function MessagesPage() {
               {Object.values(directPreviews).some((p) => p.hasUnseen) ? (
                 <span className="absolute right-2 top-2 h-2 w-2 rounded-full bg-rose-500" aria-label="Unseen messages" />
               ) : null}
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setMode('project')}
+              className={[
+                'relative w-1/3 rounded-lg px-3 py-2 text-sm font-medium transition sm:w-auto',
+                mode === 'project' ? 'bg-slate-900 text-white' : 'text-slate-700 hover:bg-slate-50',
+              ].join(' ')}
+            >
+              Project
             </button>
           </div>
         </div>
@@ -499,7 +560,7 @@ export default function MessagesPage() {
             </form>
           </CardContent>
         </Card>
-      ) : (
+      ) : mode === 'direct' ? (
         <div className="grid grid-cols-1 gap-4 lg:grid-cols-12">
           <Card className="lg:col-span-4">
             <CardHeader>
@@ -521,7 +582,7 @@ export default function MessagesPage() {
                     <button
                       type="button"
                       onClick={() => setUserSearch('')}
-                      className="rounded-lg px-2 py-1 text-xs text-slate-600 hover:bg-slate-50"
+                      className="rounded-lg px-2 py-1 text-xs text-slate-600 hover:bg-slate-500"
                     >
                       Clear
                     </button>
@@ -556,7 +617,7 @@ export default function MessagesPage() {
                           ? 'border-slate-900 bg-slate-900 text-white'
                           : hasUnseen
                             ? 'border-emerald-400 bg-white text-slate-900 shadow-[0_0_0_3px_rgba(52,211,153,0.25)]'
-                            : 'border-slate-200 bg-white text-slate-700 hover:bg-slate-50',
+                            : 'border-slate-200 bg-white text-slate-700 hover:bg-slate-500',
                       ].join(' ')}
                       onClick={() => setSelectedUser(chatUser)}
                       type="button"
@@ -629,6 +690,110 @@ export default function MessagesPage() {
                   disabled={!selectedUser}
                 />
                 <Button type="submit" disabled={sending || !selectedUser || !directRoomId}>
+                  Send
+                </Button>
+              </form>
+            </CardContent>
+          </Card>
+        </div>
+      ) : (
+        // Project Chat Mode
+        <div className="grid grid-cols-1 gap-4 lg:grid-cols-12">
+          <Card className="lg:col-span-4">
+            <CardHeader>
+              <div className="flex flex-col gap-3">
+                <div className="flex items-center justify-between gap-3">
+                  <h2 className="text-lg font-semibold text-slate-900">Projects</h2>
+                  <div className="text-xs text-slate-500">{projects.length} total</div>
+                </div>
+              </div>
+            </CardHeader>
+
+            <CardContent>
+              <div className="max-h-[32rem] space-y-2 overflow-y-auto pr-1">
+                {projects.length === 0 ? (
+                  <p className="text-sm text-slate-500">No projects available.</p>
+                ) : null}
+
+                {projects.map((project) => {
+                  const active = selectedProject?.id === project.id
+
+                  return (
+                    <button
+                      key={project.id}
+                      className={[
+                        'relative w-full rounded-xl border px-3 py-3 text-left text-sm transition',
+                        active
+                          ? 'border-slate-900 bg-slate-900 text-white'
+                          : 'border-slate-200 bg-white text-slate-700 hover:bg-slate-500',
+                      ].join(' ')}
+                      onClick={() => setSelectedProject(project)}
+                      type="button"
+                    >
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="min-w-0 flex-1">
+                          <div className={['truncate font-semibold'].join(' ')}>
+                            {project.name}
+                          </div>
+                          <div className={`truncate text-xs ${active ? 'text-slate-200' : 'text-slate-500'}`}>
+                            {project.project_code}
+                          </div>
+                        </div>
+                      </div>
+                    </button>
+                  )
+                })}
+              </div>
+            </CardContent>
+          </Card>
+
+          <Card className="lg:col-span-8">
+            <CardHeader>
+              <div className="flex flex-col gap-1">
+                <h2 className="text-lg font-semibold text-slate-900">
+                  {selectedProject ? `Project: ${selectedProject.name}` : 'Select a project'}
+                </h2>
+                <p className="text-sm text-slate-500">
+                  {selectedProject ? `Chat for project ${selectedProject.name}.` : 'Pick a project from the list to start chatting.'}
+                </p>
+              </div>
+            </CardHeader>
+
+            <CardContent className="space-y-4">
+              {projectLoading ? <p className="text-sm text-slate-500">Loading project messages…</p> : renderMessages(projectMessages)}
+              {projectError ? <p className="text-sm text-rose-600">{projectError}</p> : null}
+
+              <form
+                className="flex items-center gap-2 rounded-xl border border-slate-200 bg-white p-2"
+                onSubmit={(event) => {
+                  event.preventDefault()
+                  const text = projectInput.trim()
+                  if (!text || !projectRoomId || sending) return
+
+                  setSending(true)
+                  apiFetch(`/messages/rooms/${projectRoomId}`, {
+                    method: 'POST',
+                    body: JSON.stringify({ content: text }),
+                  })
+                    .then(() => {
+                      setProjectInput('')
+                      loadMessages(projectRoomId, 'project')
+                    })
+                    .catch(() => {
+                      setProjectError('Failed to send project message.')
+                    })
+                    .finally(() => {
+                      setSending(false)
+                    })
+                }}
+              >
+                <Input
+                  value={projectInput}
+                  onChange={(event) => setProjectInput(event.target.value)}
+                  placeholder={selectedProject ? `Message in project ${selectedProject.name}…` : 'Select a project first'}
+                  disabled={!selectedProject}
+                />
+                <Button type="submit" disabled={sending || !selectedProject || !projectRoomId}>
                   Send
                 </Button>
               </form>
