@@ -7,6 +7,7 @@ import Button from '../components/ui/Button'
 import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/Card'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '../components/ui/Table'
 import { useToast } from '../components/Toast'
+import DocumentUploadTracker from '../components/DocumentUploadTracker';
 
 interface DocumentItem {
   id: number
@@ -187,7 +188,7 @@ export default function DocumentsPage() {
       })
 
       if (!options?.silent) {
-        toast.push({ title: 'Document updated', variant: 'success' })
+        toast.push({ title: 'File updated', variant: 'success' })
       }
 
       // Reload list so table reflects latest server state
@@ -228,7 +229,7 @@ export default function DocumentsPage() {
     setUploading(true)
     try {
       await apiFetch('/documents/upload', { method: 'POST', body: form })
-      toast.push({ title: 'Upload received', description: 'Document is processing.', variant: 'success' })
+      toast.push({ title: 'Upload received', description: 'File is processing.', variant: 'success' })
       setFile(null)
       await loadDocs()
     } catch (err) {
@@ -258,10 +259,10 @@ export default function DocumentsPage() {
         <div>
           <div className="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-white px-3 py-1 text-xs font-semibold text-slate-700 shadow-sm">
             <span className="h-2 w-2 rounded-full bg-cyan-400 shadow-[0_0_10px_rgba(34,211,238,0.75)]" />
-            Docs Pipeline
+            Company File Management
           </div>
-          <h1 className="mt-3 text-2xl font-semibold text-slate-900">Documents</h1>
-          <p className="mt-1 text-sm text-slate-500">Upload, review extraction, and correct fields.</p>
+          <h1 className="mt-3 text-2xl font-semibold text-slate-900">Automation Development Files</h1>
+          <p className="mt-1 text-sm text-slate-500">Upload, review, and manage automation development files.</p>
         </div>
         <Badge variant={uploading ? 'warning' : 'info'}>{uploading ? 'Processing upload' : 'Ready'}</Badge>
       </div>
@@ -269,39 +270,38 @@ export default function DocumentsPage() {
       {/* Upload */}
       <Card>
         <CardHeader>
-          <CardTitle>Upload new document</CardTitle>
+          <CardTitle>Upload new file</CardTitle>
         </CardHeader>
         <CardContent>
-          <div
-            className={cx(
-              'flex flex-col items-center justify-center rounded-2xl border-2 border-dashed px-6 py-8 text-center text-sm transition',
-              isDragging ? 'border-cyan-400 bg-cyan-50/30' : 'border-slate-200 bg-white'
-            )}
-            onDragOver={(event) => {
-              event.preventDefault()
-              setIsDragging(true)
-            }}
-            onDragLeave={() => setIsDragging(false)}
-            onDrop={handleDrop}
-          >
-            <div className="text-2xl">📄</div>
-            <div className="mt-2 font-semibold text-slate-800">Drag & drop files here</div>
-            <div className="mt-1 text-xs text-slate-500">PDF, DOCX, or image files are accepted.</div>
+          <div className="space-y-4">
+            <div
+              className={cx(
+                'flex h-32 cursor-pointer flex-col items-center justify-center rounded-2xl border-2 border-dashed',
+                isDragging ? 'border-cyan-400 bg-cyan-50/50' : 'border-slate-300 hover:border-slate-400'
+              )}
+              onDragOver={(e) => {
+                e.preventDefault()
+                setIsDragging(true)
+              }}
+              onDragLeave={() => setIsDragging(false)}
+              onDrop={handleDrop}
+              onClick={() => document.getElementById('file-input')?.click()}
+            >
+              <div className="text-slate-400">Drop file here or click to browse</div>
+              <input
+                id="file-input"
+                type="file"
+                className="hidden"
+                onChange={(e) => e.target.files?.[0] && setFile(e.target.files[0])}
+              />
+              {file && <div className="mt-2 text-sm font-medium text-slate-700">{file.name}</div>}
+            </div>
 
-            <input
-              type="file"
-              className="mt-4 text-xs"
-              disabled={!canWrite}
-              onChange={(event) => setFile(event.target.files?.[0] || null)}
-            />
-
-            <Button className="mt-4" onClick={upload} disabled={!canWrite || !file || uploading}>
-              {uploading ? 'Uploading…' : file ? `Upload ${file.name}` : 'Select file'}
-            </Button>
-
-            {!canWrite ? (
-              <div className="mt-3 text-xs text-slate-400">You don’t have permission to upload documents.</div>
-            ) : null}
+            <div className="flex justify-end">
+              <Button onClick={upload} disabled={!file || uploading}>
+                {uploading ? 'Uploading...' : 'Upload File'}
+              </Button>
+            </div>
           </div>
         </CardContent>
       </Card>
@@ -322,9 +322,9 @@ export default function DocumentsPage() {
           <TableBody>
             {documents.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={5} className="text-center text-sm text-slate-500">
-                  No documents uploaded yet.
-                </TableCell>
+                  <TableCell colSpan={5} className="text-center text-sm text-slate-500">
+                    No files uploaded yet.
+                  </TableCell>
               </TableRow>
             ) : null}
 
@@ -398,7 +398,7 @@ export default function DocumentsPage() {
                         onClick={async () => {
                           if (!confirm('Delete this queued document?')) return
                           await apiFetch(`/documents/${doc.id}`, { method: 'DELETE' })
-                          toast.push({ title: 'Document deleted', variant: 'info' })
+                          toast.push({ title: 'File deleted', variant: 'info' })
                           await loadDocs()
                         }}
                       >
@@ -475,10 +475,10 @@ export default function DocumentsPage() {
 
                         {/* Metadata */}
                         <Card className="p-4">
-                          <CardTitle>Document metadata</CardTitle>
+                          <CardTitle>File metadata</CardTitle>
 
                           <label className="mt-3 block text-xs font-semibold uppercase tracking-wide text-slate-500">
-                            Document type
+                            File type
                           </label>
 
                           <select
@@ -566,7 +566,7 @@ export default function DocumentsPage() {
 
                           {!canWrite ? (
                             <div className="mt-3 text-xs text-slate-400">
-                              You don’t have permission to edit documents.
+                              You don’t have permission to edit files.
                             </div>
                           ) : null}
                         </Card>

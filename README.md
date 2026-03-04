@@ -1,25 +1,28 @@
-# ALINE AI Document Processing System (OpenAI-Only Version)
+# AutoDev Automation Platform (Engineering Company Management System)
 
-This is a robust document processing system that uses OpenAI-compatible APIs for document classification, extraction, and routing. This version has been optimized to use only OpenAI-compatible APIs and removes all Ollama dependencies.
+This is a comprehensive automation platform designed for engineering companies to manage projects, documents, workflows, and team collaboration. The system includes document processing capabilities, project management tools, customer relationship management, and automated workflow systems to streamline operations across engineering departments including engineering, management, sales, and quality assurance teams.
 
 ## Features
 
-- **Document Classification**: Automatically categorizes documents into predefined types
-- **Information Extraction**: Extracts structured data from documents
-- **File Watching**: Monitors specified directories for new documents
-- **Background Processing**: Asynchronous task processing with Celery
-- **Web Interface**: Frontend for managing documents and viewing results
+- **Project Management**: Comprehensive project tracking and management for engineering teams
+- **Document Management**: Automated document classification, extraction, and organization
+- **Customer Relationship Management**: Track customer interactions, proposals, and communications
+- **Quality Assurance**: Manage quality reports, inspections, and compliance documentation
+- **Team Collaboration**: Cross-departmental workflow tools for engineering, sales, and management
+- **Automated Workflows**: Background processing and task automation with Celery
+- **Real-time Dashboard**: Live monitoring of projects, tasks, and company metrics
+- **AI Assistant**: Intelligent support for document processing and data extraction
 
 ## Architecture
 
-The system consists of multiple services:
+The system consists of multiple services designed for engineering company operations:
 
-- **Backend**: FastAPI application for API endpoints
-- **Worker**: Celery workers for background tasks
-- **Watcher**: File system watcher for new documents
-- **PostgreSQL**: Database for storing metadata
-- **Redis**: Message broker for Celery
-- **Frontend**: Web interface
+- **Backend**: FastAPI application handling all business logic and API endpoints
+- **Worker**: Celery workers for background processing and automation tasks
+- **Watcher**: File system watcher for automatic document intake and processing
+- **PostgreSQL**: Database for storing company data, projects, customers, and documents
+- **Redis**: Message broker for Celery and caching services
+- **Frontend**: Modern web interface for cross-departmental collaboration
 
 ## Prerequisites
 
@@ -81,21 +84,21 @@ The application will be available at `http://localhost:9876`
 
 ### Backend
 - Runs on port 8000 internally
-- Provides REST API for document processing
-- Handles authentication and database operations
+- Provides comprehensive API for all company operations including projects, customers, documents, and workflows
+- Handles authentication, authorization, and database operations
 
 ### Worker
 - Processes background tasks using Celery
-- Performs document classification and extraction
-- Communicates with OpenAI API
+- Manages document processing, report generation, and automated workflows
+- Communicates with AI services for intelligent document processing
 
 ### Watcher
-- Monitors the `WATCH_PATH` directory for new files
-- Creates database records for new documents
-- Triggers processing workflows
+- Monitors the `WATCH_PATH` directory for new documents and files
+- Creates database records for new documents and triggers processing workflows
+- Integrates with document management and project tracking systems
 
 ### Frontend
-- Web interface for managing documents
+- Modern web interface for cross-departmental collaboration
 - Runs on port specified by `WEB_PORT` (default: 9876)
 
 ## Troubleshooting

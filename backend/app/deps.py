@@ -40,6 +40,12 @@ def get_current_user(db: Session = Depends(get_db), token: str = Depends(oauth2_
     return user
 
 
+def get_current_active_user(current_user: models.User = Depends(get_current_user)) -> models.User:
+    if not current_user.is_active:
+        raise HTTPException(status_code=400, detail="Inactive user")
+    return current_user
+
+
 def require_roles(*roles: str | Iterable[str]):
     normalized: set[str] = set()
     for role in roles:

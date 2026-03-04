@@ -1,935 +1,180 @@
-import { FormEvent, useEffect, useMemo, useRef, useState } from 'react'
-import { useNavigate } from 'react-router-dom'
+import React, { useState, useEffect } from 'react';
+import { Card } from '../components/ui/Card';
+import Button from '../components/ui/Button';
+import { apiFetch } from '../api';
 
-import { apiFetch } from '../api'
-import { useToast } from '../components/Toast'
-import Badge from '../components/ui/Badge'
-import Button from '../components/ui/Button'
-import { Card, CardContent, CardHeader } from '../components/ui/Card'
-
-interface ProposalItem {
-  id: number
-  doc_version_id: number
-  target_table: string
-  target_module: string
-  proposed_action: string
-  proposed_fields: Record<string, unknown>
-  field_confidence: Record<string, number>
-  evidence: Record<string, { snippet?: string; location?: string; source?: string }>
-  questions: Record<string, unknown>
-  status: string
-  created_at: string
+interface InboxItem {
+  id: number;
+  title: string;
+  description: string;
+  type: 'document' | 'proposal' | 'project' | 'customer' | 'message';
+  priority: 'low' | 'medium' | 'high' | 'critical';
+  status: 'pending' | 'processing' | 'completed' | 'reviewed';
+  created_at: string;
+  updated_at: string;
 }
 
-interface ChatSession {
-  id: number
-  title?: string | null
-  created_at: string
-  updated_at: string
-}
-
-interface ChatMessage {
-  id: number
-  role: 'user' | 'assistant' | 'system'
-  content: string
-  created_at: string
-}
-
-interface UserMemory {
-  id: number
-  type: string
-  key?: string | null
-  content: string
-  relevance: number
-  created_at: string
-  updated_at: string
-}
-
-interface AIProposedAction {
-  label: string
-  method: 'POST' | 'PATCH' | 'DELETE'
-  path: string
-  body: Record<string, unknown>
-}
-
-interface AIProposedActionState extends AIProposedAction {
-  key: string
-  running: boolean
-  executed: boolean
-  error?: string
-}
-
-interface StreamFinalPayload {
-  reply: string
-  memory_updated: boolean
-  proposed_actions?: AIProposedAction[]
-}
-
-interface AutoApproveResult {
-  approved_count: number
-  approved_ids: number[]
-  failed: Array<{ proposal_id: string; error: string }>
-}
-
-const iconMap: Record<string, string> = {
-  tasks: '✅',
-  projects: '📌',
-  issues: '🚩',
-  ncrs: '🛠️',
-  customers: '🏢',
-}
-
-function cx(...classes: Array<string | false | undefined | null>) {
-  return classes.filter(Boolean).join(' ')
-}
-
-const summarizeFields = (fields: Record<string, unknown>) => {
-  const entries = Object.entries(fields || {})
-  if (entries.length === 0) return 'No extracted fields yet.'
-  return entries
-    .slice(0, 4)
-    .map(([key, value]) => {
-      const display = typeof value === 'object' ? JSON.stringify(value) : String(value)
-      return `${key}: ${display.slice(0, 26)}`
-    })
-    .join(' · ')
-}
-
-const averageConfidence = (fieldConfidence: Record<string, number>) => {
-  const values = Object.values(fieldConfidence || {})
-  if (!values.length) return 0
-  const total = values.reduce((sum, value) => sum + (typeof value === 'number' ? value : 0), 0)
-  return total / values.length
-}
-
-const extractEvidenceSnippet = (evidence: Record<string, { snippet?: string; location?: string; source?: string }>) => {
-  const entries = Object.values(evidence || {})
-  const snippet = entries.find((entry) => entry?.snippet)?.snippet
-  return snippet ? snippet.slice(0, 180) : ''
-}
-
-const hasOpenQuestions = (questions: Record<string, unknown>) => {
-  return Object.values(questions || {}).some((value) => {
-    if (!value) return false
-    if (Array.isArray(value)) return value.length > 0
-    if (typeof value === 'string') return value.trim().length > 0
-    return true
-  })
-}
-
-function confidenceVariant(conf: number) {
-  if (conf >= 0.9) return 'success'
-  if (conf >= 0.75) return 'warning'
-  return 'danger'
-}
-
-export default function InboxPage() {
-  const [items, setItems] = useState<ProposalItem[]>([])
-  const [loading, setLoading] = useState(true)
-  const [error, setError] = useState('')
-
-  const [sessionId, setSessionId] = useState<number | null>(null)
-  const [chatMessages, setChatMessages] = useState<ChatMessage[]>([])
-  const [chatInput, setChatInput] = useState('')
-  const [chatLoading, setChatLoading] = useState(false)
-  const [proposedActions, setProposedActions] = useState<AIProposedActionState[]>([])
-  const [autonomousMode, setAutonomousMode] = useState(true)
-  const [backgroundMode, setBackgroundMode] = useState(false)
-  const [backgroundRounds, setBackgroundRounds] = useState(6)
-
-  const [memoryOpen, setMemoryOpen] = useState(false)
-  const [memories, setMemories] = useState<UserMemory[]>([])
-  const [memoryLoading, setMemoryLoading] = useState(false)
-
-  const [selectedProposalId, setSelectedProposalId] = useState<number | null>(null)
-
-  const navigate = useNavigate()
-  const toast = useToast()
-
-  // Scroll refs
-  const chatScrollRef = useRef<HTMLDivElement | null>(null)
-  const chatBottomRef = useRef<HTMLDivElement | null>(null)
-
-  const scrollChatToBottom = (smooth = true) => {
-    const el = chatBottomRef.current
-    if (!el) return
-    el.scrollIntoView({ behavior: smooth ? 'smooth' : 'auto', block: 'end' })
-  }
-
-  const quickPrompts = [
-    'Summarize top risks in pending proposals',
-    'Which proposal is safest to approve first?',
-    'Suggest a follow-up task for the selected proposal',
-    'Auto-manage inbox and create needed tasks/issues now',
-  ]
-
-  const load = async () => {
-    setLoading(true)
-    setError('')
-    try {
-      const data = (await apiFetch('/proposals?status=pending')) as ProposalItem[]
-      setItems(data)
-      setSelectedProposalId((prev) => prev ?? data[0]?.id ?? null)
-    } catch {
-      setError('Unable to load AI actions. Please retry.')
-      setItems([])
-    } finally {
-      setLoading(false)
-    }
-  }
-
-  const loadOrCreateSession = async () => {
-    try {
-      const sessions = (await apiFetch('/ai/sessions')) as ChatSession[]
-      const activeSession =
-        sessions[0] ??
-        ((await apiFetch('/ai/sessions', {
-          method: 'POST',
-          body: JSON.stringify({ title: 'AI Inbox' }),
-        })) as ChatSession)
-
-      setSessionId(activeSession.id)
-      const msgs = (await apiFetch(`/ai/sessions/${activeSession.id}/messages`)) as ChatMessage[]
-      setChatMessages(msgs)
-
-      // After initial load, jump to bottom
-      setTimeout(() => scrollChatToBottom(false), 0)
-    } catch {
-      toast.push({ title: 'AI unavailable', description: 'Could not initialize AI chat session.', variant: 'error' })
-    }
-  }
+const InboxPage: React.FC = () => {
+  const [items, setItems] = useState<InboxItem[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [filter, setFilter] = useState<'all' | 'pending' | 'processing' | 'completed' | 'reviewed'>('all');
 
   useEffect(() => {
-    void load()
-    void loadOrCreateSession()
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
-
-  // Auto-scroll when messages change
-  useEffect(() => {
-    // don’t yank scroll if user is reading older messages
-    const container = chatScrollRef.current
-    if (!container) return
-    const nearBottom = container.scrollHeight - container.scrollTop - container.clientHeight < 120
-    if (nearBottom) scrollChatToBottom(true)
-  }, [chatMessages.length])
-
-  const quickApprove = async (proposal: ProposalItem) => {
-    try {
-      setItems((current) => current.filter((item) => item.id !== proposal.id))
-      await apiFetch(`/proposals/${proposal.id}/approve`, {
-        method: 'POST',
-        body: JSON.stringify({ proposed_fields: proposal.proposed_fields }),
-      })
-      toast.push({
-        title: 'AI action approved',
-        description: `Proposal #${proposal.id} has been approved.`,
-        variant: 'success',
-      })
-    } catch {
-      toast.push({
-        title: 'Approval failed',
-        description: 'Please review the proposal before approving.',
-        variant: 'error',
-      })
-      void load()
-    }
-  }
-
-  const sendMessage = async (event: FormEvent) => {
-    event.preventDefault()
-    const message = chatInput.trim()
-    if (!message || chatLoading || !sessionId) return
-
-    const optimisticMessage: ChatMessage = {
-      id: Date.now(),
-      role: 'user',
-      content: message,
-      created_at: new Date().toISOString(),
-    }
-    setChatMessages((current) => [...current, optimisticMessage])
-    setChatInput('')
-    setChatLoading(true)
-    setProposedActions([])
-
-    try {
-      const baseContext = {
-        page: 'inbox',
-        pending_proposals: items.length,
-        selected_proposal_id: selectedProposalId,
-        available_pages: ['inbox', 'dashboard', 'projects', 'work', 'quality', 'customers', 'messages', 'documents', 'status'],
-        autonomous_mode: autonomousMode,
+    const fetchInboxItems = async () => {
+      try {
+        const data = await apiFetch('/inbox/items');
+        setItems(data as InboxItem[]);
+      } catch (err: any) {
+        setError('Failed to load inbox items');
+        console.error('Inbox error:', err);
+      } finally {
+        setLoading(false);
       }
+    };
 
-      if (backgroundMode) {
-        const response = (await apiFetch(`/ai/sessions/${sessionId}/background-run`, {
-          method: 'POST',
-          body: JSON.stringify({
-            goal: message,
-            max_rounds: Math.max(1, Math.min(backgroundRounds, 12)),
-            context: { ...baseContext, background_mode: true },
-          }),
-        })) as { reply: string; last_actions?: AIProposedAction[] }
+    fetchInboxItems();
+  }, []);
 
-        setChatMessages((current) => [
-          ...current,
-          {
-            id: Date.now() + 1,
-            role: 'assistant',
-            content: response.reply,
-            created_at: new Date().toISOString(),
-          },
-        ])
+  const filteredItems = filter === 'all' 
+    ? items 
+    : items.filter(item => item.status === filter);
 
-        const actions = (response.last_actions || []).map((action, index) => ({
-          ...action,
-          key: `${Date.now()}-${index}`,
-          running: false,
-          executed: false,
-          error: undefined,
-        }))
-        setProposedActions(actions)
-      } else {
-        const assistantId = Date.now() + 1
-        setChatMessages((current) => [
-          ...current,
-          {
-            id: assistantId,
-            role: 'assistant',
-            content: '',
-            created_at: new Date().toISOString(),
-          },
-        ])
+  const formatDate = (dateString: string) => {
+    return new Date(dateString).toLocaleDateString();
+  };
 
-        const token = localStorage.getItem('token')
-        const apiBase = import.meta.env.VITE_API_BASE_URL ? String(import.meta.env.VITE_API_BASE_URL).replace(/\/+$/, '') : ''
-        const baseHasApi = apiBase.endsWith('/api')
-        const endpointPath = `/ai/sessions/${sessionId}/messages/stream`
-        const fullPath = endpointPath.startsWith('/api') || baseHasApi ? endpointPath : `/api${endpointPath}`
-        const streamUrl = `${apiBase}${fullPath}`
-
-        const response = await fetch(streamUrl, {
-          method: 'POST',
-          headers: {
-            Authorization: token ? `Bearer ${token}` : '',
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({
-            message,
-            context: baseContext,
-          }),
-        })
-
-        if (!response.ok || !response.body) {
-          throw new Error(`Stream failed: ${response.status}`)
-        }
-
-        const reader = response.body.getReader()
-        const decoder = new TextDecoder()
-        let buffer = ''
-
-        const applyAssistantContent = (content: string) => {
-          setChatMessages((current) =>
-            current.map((msg) => (msg.id === assistantId ? { ...msg, content } : msg)),
-          )
-        }
-
-        const applyFinal = (payload: StreamFinalPayload) => {
-          applyAssistantContent(payload.reply || '')
-          const actions = (payload.proposed_actions || []).map((action, index) => ({
-            ...action,
-            key: `${Date.now()}-${index}`,
-            running: false,
-            executed: false,
-            error: undefined,
-          }))
-          setProposedActions(actions)
-        }
-
-        let assistantText = ''
-        let done = false
-
-        while (!done) {
-          const { value, done: streamDone } = await reader.read()
-          if (streamDone) break
-          buffer += decoder.decode(value, { stream: true })
-
-          let boundary = buffer.indexOf('\n\n')
-          while (boundary !== -1) {
-            const rawEvent = buffer.slice(0, boundary)
-            buffer = buffer.slice(boundary + 2)
-
-            const lines = rawEvent.split('\n')
-            let eventName = 'message'
-            const dataLines: string[] = []
-            for (const line of lines) {
-              if (line.startsWith('event:')) {
-                eventName = line.slice(6).trim()
-              } else if (line.startsWith('data:')) {
-                dataLines.push(line.slice(5).trim())
-              }
-            }
-            const rawData = dataLines.join('\n')
-
-            if (eventName === 'token') {
-              try {
-                const parsed = JSON.parse(rawData) as { delta?: string }
-                if (parsed.delta) {
-                  assistantText += parsed.delta
-                  applyAssistantContent(assistantText)
-                }
-              } catch {
-                // ignore malformed token event
-              }
-            } else if (eventName === 'final') {
-              try {
-                const parsed = JSON.parse(rawData) as StreamFinalPayload
-                applyFinal(parsed)
-              } catch {
-                applyAssistantContent(assistantText)
-              }
-            } else if (eventName === 'error') {
-              throw new Error(rawData || 'Streaming error')
-            } else if (eventName === 'close') {
-              done = true
-              break
-            }
-
-            boundary = buffer.indexOf('\n\n')
-          }
-        }
-      }
-    } catch {
-      toast.push({ title: 'AI chat failed', description: 'Could not reach AI assistant. Please try again.', variant: 'error' })
-    } finally {
-      setChatLoading(false)
+  const getPriorityClass = (priority: string) => {
+    switch (priority) {
+      case 'critical': return 'bg-red-100 text-red-800';
+      case 'high': return 'bg-orange-100 text-orange-800';
+      case 'medium': return 'bg-yellow-100 text-yellow-800';
+      case 'low': return 'bg-green-100 text-green-800';
+      default: return 'bg-gray-100 text-gray-800';
     }
+  };
+
+  const getStatusClass = (status: string) => {
+    switch (status) {
+      case 'pending': return 'bg-gray-100 text-gray-800';
+      case 'processing': return 'bg-blue-100 text-blue-800';
+      case 'completed': return 'bg-green-100 text-green-800';
+      case 'reviewed': return 'bg-purple-100 text-purple-800';
+      default: return 'bg-gray-100 text-gray-800';
+    }
+  };
+
+  if (loading) {
+    return (
+      <div className="p-6 max-w-6xl mx-auto">
+        <h1 className="text-3xl font-bold mb-6">Automation Inbox</h1>
+        <div className="text-center py-10">Loading inbox items...</div>
+      </div>
+    );
   }
 
-  const executeProposedAction = async (actionKey: string) => {
-    const action = proposedActions.find((item) => item.key === actionKey)
-    if (!action || action.running || action.executed) return
-
-    const confirmed = window.confirm(`Allow AI to execute this action?\n\n${action.label}`)
-    if (!confirmed) return
-
-    setProposedActions((current) =>
-      current.map((item) => (item.key === actionKey ? { ...item, running: true, error: undefined } : item)),
-    )
-
-    try {
-      const result = await apiFetch('/ai/execute', {
-        method: 'POST',
-        body: JSON.stringify({
-          confirm: true,
-          method: action.method,
-          path: action.path,
-          body: action.body,
-        }),
-      })
-
-      setProposedActions((current) =>
-        current.map((item) =>
-          item.key === actionKey ? { ...item, running: false, executed: true, error: undefined } : item,
-        ),
-      )
-      toast.push({ title: 'AI action executed', description: action.label, variant: 'success' })
-      setChatMessages((current) => [
-        ...current,
-        {
-          id: Date.now(),
-          role: 'assistant',
-          content: `✅ Executed: ${action.label}\nResult: ${JSON.stringify(result)}`,
-          created_at: new Date().toISOString(),
-        },
-      ])
-      void load()
-    } catch (error) {
-      const message = error instanceof Error ? error.message : 'Execution failed'
-      setProposedActions((current) =>
-        current.map((item) => (item.key === actionKey ? { ...item, running: false, error: message } : item)),
-      )
-      toast.push({ title: 'AI action failed', description: message, variant: 'error' })
-    }
+  if (error) {
+    return (
+      <div className="p-6 max-w-6xl mx-auto">
+        <h1 className="text-3xl font-bold mb-6">Automation Inbox</h1>
+        <Card className="p-6 text-center text-red-600">{error}</Card>
+      </div>
+    );
   }
-
-  const autoApprovePending = async () => {
-    try {
-      const response = (await apiFetch('/proposals/auto-approve-pending?limit=500', {
-        method: 'POST',
-      })) as AutoApproveResult
-      toast.push({
-        title: 'Auto-approve completed',
-        description: `Approved ${response.approved_count} proposals${response.failed.length ? `, failed ${response.failed.length}` : ''}.`,
-        variant: response.failed.length ? 'error' : 'success',
-      })
-      void load()
-    } catch (error) {
-      const message = error instanceof Error ? error.message : 'Auto-approve failed'
-      toast.push({ title: 'Auto-approve failed', description: message, variant: 'error' })
-    }
-  }
-
-  const openMemory = async () => {
-    setMemoryOpen(true)
-    setMemoryLoading(true)
-    try {
-      const data = (await apiFetch('/ai/memory')) as UserMemory[]
-      setMemories(data)
-    } catch {
-      toast.push({ title: 'Memory load failed', description: 'Could not load saved AI memory.', variant: 'error' })
-    } finally {
-      setMemoryLoading(false)
-    }
-  }
-
-  const deleteMemory = async (memoryId: number) => {
-    try {
-      await apiFetch(`/ai/memory/${memoryId}`, { method: 'DELETE' })
-      setMemories((current) => current.filter((memory) => memory.id !== memoryId))
-    } catch {
-      toast.push({ title: 'Delete failed', description: 'Could not delete this memory item.', variant: 'error' })
-    }
-  }
-
-  const pendingCount = items.length
-  const groupedItems = useMemo(
-    () =>
-      items.reduce<Record<string, ProposalItem[]>>((groups, proposal) => {
-        const dateKey = new Date(proposal.created_at).toLocaleDateString()
-        const groupKey = `${proposal.doc_version_id}|${dateKey}`
-        if (!groups[groupKey]) groups[groupKey] = []
-        groups[groupKey].push(proposal)
-        return groups
-      }, {}),
-    [items],
-  )
 
   return (
-    <div className="mx-auto max-w-7xl space-y-6">
-      {/* Hide scrollbar but keep scroll (no CSS file needed) */}
-      <style>
-        {`
-          .no-scrollbar::-webkit-scrollbar { display: none; }
-          .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
-        `}
-      </style>
-
-      {/* Header */}
-      <div className="flex flex-wrap items-start justify-between gap-4">
-        <div>
-          <div className="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-white px-3 py-1 text-xs font-semibold text-slate-700 shadow-sm">
-            <span className="h-2 w-2 rounded-full bg-emerald-400 shadow-[0_0_10px_rgba(16,185,129,0.8)]" />
-            AI Review Queue
-          </div>
-
-          <h1 className="mt-3 text-3xl font-semibold text-slate-900">AI Inbox</h1>
-          <p className="mt-1 text-sm text-slate-500">
-            Review pending AI actions and coordinate next steps with chat.
-          </p>
-        </div>
-
-        <div className="flex items-center gap-2">
-          <Badge variant={pendingCount > 0 ? 'warning' : 'success'}>{pendingCount} pending</Badge>
-          <Button variant="ghost" onClick={() => void autoApprovePending()}>
-            Auto-Approve All
-          </Button>
-          <Button variant="secondary" onClick={() => void load()}>
-            Refresh
-          </Button>
+    <div className="p-6 max-w-6xl mx-auto">
+      <div className="flex justify-between items-center mb-6">
+        <h1 className="text-3xl font-bold">Automation Inbox</h1>
+        <div className="flex space-x-2">
+          <select
+            value={filter}
+            onChange={(e) => setFilter(e.target.value as any)}
+            className="border border-gray-300 rounded-md px-3 py-2 bg-white"
+          >
+            <option value="all">All Items</option>
+            <option value="pending">Pending</option>
+            <option value="processing">Processing</option>
+            <option value="completed">Completed</option>
+            <option value="reviewed">Reviewed</option>
+          </select>
+          <Button onClick={() => window.location.reload()}>Refresh</Button>
         </div>
       </div>
 
-      {/* Layout */}
-      <div className="grid grid-cols-1 gap-6 lg:grid-cols-12">
-        {/* Pending actions */}
-        <Card className="lg:col-span-7">
-          <CardHeader>
-            <div className="flex flex-wrap items-start justify-between gap-2">
-              <div>
-                <h2 className="text-lg font-semibold text-slate-900">Pending actions</h2>
-                <p className="mt-1 text-sm text-slate-500">Grouped by document version and date.</p>
-              </div>
-
-              <div className="text-xs text-slate-500">
-                Tip: click a card to “select” it for AI chat context.
-              </div>
-            </div>
-          </CardHeader>
-
-          <CardContent>
-            {loading ? (
-              <div className="space-y-4">
-                {[...Array(4)].map((_, index) => (
-                  <div key={index} className="space-y-3 rounded-2xl border border-slate-200 p-4">
-                    <div className="h-3 w-48 animate-pulse rounded bg-slate-200" />
-                    <div className="h-3 w-full animate-pulse rounded bg-slate-100" />
-                    <div className="h-3 w-4/5 animate-pulse rounded bg-slate-100" />
-                    <div className="h-8 w-56 animate-pulse rounded bg-slate-100" />
-                  </div>
-                ))}
-              </div>
-            ) : null}
-
-            {error ? (
-              <div className="rounded-2xl border border-slate-200 bg-slate-50 p-8 text-center">
-                <p className="text-sm text-slate-600">{error}</p>
-                <Button className="mt-4" variant="secondary" onClick={() => void load()}>
-                  Retry
-                </Button>
-              </div>
-            ) : null}
-
-            {!loading && !error && items.length === 0 ? (
-              <div className="rounded-2xl border border-dashed border-slate-300 bg-slate-50 p-10 text-center text-sm text-slate-500">
-                <p>No pending AI actions right now.</p>
-                <p className="mt-2">Check back soon or refresh to look for new suggestions.</p>
-                <Button className="mt-4" variant="secondary" onClick={() => void load()}>
-                  Retry
-                </Button>
-              </div>
-            ) : null}
-
-            {!loading && !error && items.length > 0 ? (
-              <div className="space-y-4 lg:max-h-[72vh] lg:overflow-auto lg:pr-2">
-                {Object.entries(groupedItems).map(([groupKey, proposals]) => {
-                  const [docVersionId, dateKey] = groupKey.split('|')
-                  return (
-                    <div key={groupKey} className="space-y-3 rounded-2xl border border-slate-200 bg-slate-50/60 p-4">
-                      <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-slate-500">
-                        <span className="font-medium text-slate-600">Document version #{docVersionId}</span>
-                        <span>{dateKey}</span>
-                      </div>
-
-                      <div className="space-y-3">
-                        {proposals.map((proposal) => {
-                          const confidence = averageConfidence(proposal.field_confidence)
-                          const quickApproveAllowed = confidence >= 0.86 && !hasOpenQuestions(proposal.questions)
-                          const questionsOpen = hasOpenQuestions(proposal.questions)
-                          const selected = selectedProposalId === proposal.id
-
-                          return (
-                            <button
-                              key={proposal.id}
-                              type="button"
-                              onClick={() => setSelectedProposalId(proposal.id)}
-                              className={cx(
-                                'group relative w-full overflow-hidden rounded-2xl border bg-white p-4 text-left',
-                                'transition duration-200 active:scale-[0.99]',
-                                selected ? 'border-emerald-300/60' : 'border-slate-200 hover:border-slate-300'
-                              )}
-                            >
-                              {selected ? (
-                                <>
-                                  <span
-                                    className={cx(
-                                      'absolute inset-0 rounded-2xl',
-                                      'bg-gradient-to-r from-emerald-500/15 via-cyan-400/18 to-fuchsia-500/15',
-                                      'shadow-[0_0_18px_rgba(16,185,129,0.30)]'
-                                    )}
-                                    aria-hidden="true"
-                                  />
-                                  <span
-                                    className={cx(
-                                      'absolute -inset-1 rounded-3xl blur-xl',
-                                      'bg-gradient-to-r from-emerald-400/12 via-cyan-400/12 to-fuchsia-400/12',
-                                      'animate-pulse'
-                                    )}
-                                    aria-hidden="true"
-                                  />
-                                  <span className="absolute inset-0 overflow-hidden rounded-2xl" aria-hidden="true">
-                                    <span
-                                      className={cx(
-                                        'absolute inset-0',
-                                        'bg-[linear-gradient(120deg,transparent_0%,rgba(255,255,255,0.14)_45%,transparent_60%)]',
-                                        'translate-x-[-120%] group-hover:translate-x-[120%]',
-                                        'transition-transform duration-700 ease-out'
-                                      )}
-                                    />
-                                  </span>
-                                  <span
-                                    className={cx(
-                                      'absolute left-2 top-1/2 h-10 w-1 -translate-y-1/2 rounded-full',
-                                      'bg-gradient-to-b from-emerald-300 via-cyan-300 to-fuchsia-300',
-                                      'shadow-[0_0_12px_rgba(34,211,238,0.65)]'
-                                    )}
-                                    aria-hidden="true"
-                                  />
-                                </>
-                              ) : null}
-
-                              <div className="relative space-y-3">
-                                <div className="flex flex-wrap items-center justify-between gap-2">
-                                  <div className="text-sm font-semibold text-slate-800">
-                                    {iconMap[proposal.target_table] ?? '🤖'} {proposal.target_table} · #{proposal.id}
-                                  </div>
-
-                                  <div className="flex items-center gap-2">
-                                    {questionsOpen ? (
-                                      <span className="rounded-full bg-amber-50 px-2 py-1 text-[11px] font-semibold text-amber-700 ring-1 ring-amber-200">
-                                        Questions
-                                      </span>
-                                    ) : (
-                                      <span className="rounded-full bg-emerald-50 px-2 py-1 text-[11px] font-semibold text-emerald-700 ring-1 ring-emerald-200">
-                                        Clear
-                                      </span>
-                                    )}
-
-                                    <Badge variant={confidenceVariant(confidence)}>
-                                      {(confidence * 100).toFixed(0)}% confidence
-                                    </Badge>
-                                  </div>
-                                </div>
-
-                                <p className="text-sm leading-relaxed text-slate-600">{summarizeFields(proposal.proposed_fields)}</p>
-
-                                {extractEvidenceSnippet(proposal.evidence) ? (
-                                  <p className="rounded-xl bg-slate-50 px-3 py-2 text-xs text-slate-500 ring-1 ring-slate-900/5">
-                                    <span className="font-semibold text-slate-600">Evidence:</span> “{extractEvidenceSnippet(proposal.evidence)}”
-                                  </p>
-                                ) : null}
-
-                                <div className="flex flex-wrap items-center gap-2 text-xs text-slate-500">
-                                  <span className="rounded-full bg-slate-100 px-2 py-1">Target: {proposal.target_table}</span>
-                                  <span className="rounded-full bg-slate-100 px-2 py-1">{new Date(proposal.created_at).toLocaleString()}</span>
-                                  {selected ? (
-                                    <span className="rounded-full bg-emerald-50 px-2 py-1 font-semibold text-emerald-700 ring-1 ring-emerald-200">
-                                      Selected for chat
-                                    </span>
-                                  ) : null}
-                                </div>
-
-                                <div className="flex flex-wrap gap-2 pt-1">
-                                  <Button variant="secondary" onClick={() => navigate(`/proposals/${proposal.id}`)}>
-                                    Review
-                                  </Button>
-                                  <Button onClick={() => navigate(`/proposals/${proposal.id}`)}>Approve</Button>
-                                  {quickApproveAllowed ? (
-                                    <Button variant="ghost" onClick={() => void quickApprove(proposal)}>
-                                      Quick Approve
-                                    </Button>
-                                  ) : null}
-                                  <Button variant="destructive" onClick={() => navigate(`/proposals/${proposal.id}`)}>
-                                    Reject
-                                  </Button>
-                                </div>
-                              </div>
-                            </button>
-                          )
-                        })}
-                      </div>
-                    </div>
-                  )
-                })}
-              </div>
-            ) : null}
-          </CardContent>
+      {filteredItems.length === 0 ? (
+        <Card className="p-6 text-center text-gray-500">
+          No items in your inbox
         </Card>
-
-        {/* AI Chat */}
-        <div className="lg:sticky lg:top-6 lg:col-span-5">
-          <Card className="flex h-[70vh] flex-col overflow-hidden">
-            <CardHeader className="flex items-start justify-between gap-4">
-              <div>
-                <h2 className="text-lg font-semibold text-slate-900">AI Chat</h2>
-                <p className="mt-1 text-sm text-slate-500">Ask for summaries, risk checks, or next best action.</p>
-                {selectedProposalId ? (
-                  <div className="mt-2 text-xs text-slate-500">
-                    Context: <span className="font-semibold text-slate-700">Proposal #{selectedProposalId}</span>
+      ) : (
+        <div className="space-y-4">
+          {filteredItems.map((item) => (
+            <Card key={item.id} className="p-4 hover:shadow-md transition-shadow">
+              <div className="flex justify-between items-start">
+                <div className="flex-1">
+                  <div className="flex items-center space-x-3 mb-2">
+                    <h3 className="font-semibold text-lg">{item.title}</h3>
+                    <span className={`px-2 py-1 rounded-full text-xs font-medium ${getPriorityClass(item.priority)}`}>
+                      {item.priority}
+                    </span>
+                    <span className={`px-2 py-1 rounded-full text-xs font-medium ${getStatusClass(item.status)}`}>
+                      {item.status}
+                    </span>
                   </div>
-                ) : null}
-              </div>
-
-              <Button variant="secondary" size="sm" onClick={() => void openMemory()}>
-                Memory
-              </Button>
-            </CardHeader>
-
-            {/* IMPORTANT: min-h-0 makes scroll work inside flex layouts */}
-            <CardContent className="flex min-h-0 flex-1 flex-col gap-3">
-              <div
-                ref={chatScrollRef}
-                className="no-scrollbar min-h-0 flex-1 space-y-3 overflow-y-auto rounded-2xl bg-slate-50 p-3 ring-1 ring-slate-900/5"
-              >
-                {chatMessages.length === 0 ? (
-                  <p className="text-sm text-slate-500">
-                    Ask AI: “Summarize top risks”, “Which proposal is safest to approve?”, “Draft corrective action…”
-                  </p>
-                ) : (
-                  chatMessages
-                    .filter((m) => m.role !== 'system')
-                    .map((message) => {
-                      const isUser = message.role === 'user'
-                      return (
-                        <div key={message.id} className={cx('flex', isUser ? 'justify-end' : 'justify-start')}>
-                          <div
-                            className={cx(
-                              'relative max-w-[92%] rounded-2xl px-3 py-2 text-sm leading-relaxed',
-                              isUser ? 'bg-slate-900 text-white' : 'bg-white text-slate-700 ring-1 ring-slate-900/5',
-                              !isUser ? 'shadow-[0_0_18px_rgba(34,211,238,0.08)]' : ''
-                            )}
-                          >
-                            {!isUser ? (
-                              <span
-                                className="pointer-events-none absolute -inset-1 rounded-3xl bg-gradient-to-r from-emerald-400/0 via-cyan-400/12 to-fuchsia-400/0 blur-xl"
-                                aria-hidden="true"
-                              />
-                            ) : null}
-                            <span className="relative">{message.content}</span>
-                          </div>
-                        </div>
-                      )
-                    })
-                )}
-
-                {chatLoading ? <p className="text-sm text-slate-500">Thinking…</p> : null}
-
-                {/* bottom anchor for auto-scroll */}
-                <div ref={chatBottomRef} />
-              </div>
-
-              <form className="flex gap-2" onSubmit={sendMessage}>
-                <input
-                  className={cx(
-                    'flex-1 rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm',
-                    'shadow-sm ring-1 ring-slate-900/5',
-                    'focus:outline-none focus:ring-2 focus:ring-emerald-400/40'
-                  )}
-                  value={chatInput}
-                  onChange={(event) => setChatInput(event.target.value)}
-                  placeholder="Ask AI about these proposals..."
-                  disabled={chatLoading}
-                />
-                <Button type="submit" disabled={chatLoading || !chatInput.trim() || !sessionId}>
-                  Send
-                </Button>
-              </form>
-
-              <div className="flex flex-wrap gap-2">
-                {quickPrompts.map((prompt) => (
-                  <Button key={prompt} size="sm" variant="secondary" onClick={() => setChatInput(prompt)}>
-                    {prompt}
-                  </Button>
-                ))}
-              </div>
-
-              <label className="flex items-center gap-2 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-600">
-                <input
-                  type="checkbox"
-                  checked={autonomousMode}
-                  onChange={(event) => setAutonomousMode(event.target.checked)}
-                />
-                Autonomous AI mode (auto-execute available actions)
-              </label>
-
-              <label className="flex items-center gap-2 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-600">
-                <input
-                  type="checkbox"
-                  checked={backgroundMode}
-                  onChange={(event) => setBackgroundMode(event.target.checked)}
-                />
-                Background self-run mode (AI continues multi-step until done)
-              </label>
-
-              {backgroundMode ? (
-                <label className="flex items-center gap-2 text-xs text-slate-600">
-                  Max rounds:
-                  <input
-                    type="number"
-                    min={1}
-                    max={12}
-                    value={backgroundRounds}
-                    onChange={(event) => {
-                      const next = Number(event.target.value)
-                      setBackgroundRounds(Number.isFinite(next) ? next : 6)
-                    }}
-                    className="w-20 rounded border border-slate-200 px-2 py-1"
-                  />
-                </label>
-              ) : null}
-
-              {proposedActions.length > 0 ? (
-                <div className="rounded-xl border border-emerald-200 bg-emerald-50/50 p-3">
-                  <p className="text-xs font-semibold uppercase tracking-wide text-emerald-700">AI proposed actions</p>
-                  <div className="mt-2 space-y-2">
-                    {proposedActions.map((action) => (
-                      <div key={action.key} className="rounded-lg border border-emerald-100 bg-white p-2">
-                        <div className="flex flex-wrap items-center justify-between gap-2">
-                          <p className="text-sm text-slate-700">{action.label}</p>
-                          <Button
-                            size="sm"
-                            onClick={() => void executeProposedAction(action.key)}
-                            disabled={action.running || action.executed}
-                          >
-                            {action.executed ? 'Executed' : action.running ? 'Executing…' : 'Execute'}
-                          </Button>
-                        </div>
-                        <p className="mt-1 text-xs text-slate-500">
-                          {action.method} {action.path}
-                        </p>
-                        {action.error ? <p className="mt-1 text-xs text-rose-600">{action.error}</p> : null}
-                      </div>
-                    ))}
+                  <p className="text-gray-600 mb-2">{item.description}</p>
+                  <div className="flex items-center text-sm text-gray-500">
+                    <span className="capitalize">{item.type}</span>
+                    <span className="mx-2">•</span>
+                    <span>Updated: {formatDate(item.updated_at)}</span>
                   </div>
                 </div>
-              ) : null}
-            </CardContent>
-          </Card>
-        </div>
-      </div>
-
-      {/* Memory modal */}
-      {memoryOpen ? (
-        <div
-          className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4 backdrop-blur-sm"
-          onClick={() => setMemoryOpen(false)}
-        >
-          <Card
-            className="relative max-h-[78vh] w-full max-w-2xl overflow-hidden"
-            onClick={(event) => event.stopPropagation()}
-          >
-            <span
-              className="pointer-events-none absolute -inset-1 rounded-3xl bg-gradient-to-r from-emerald-400/10 via-cyan-400/12 to-fuchsia-400/10 blur-xl"
-              aria-hidden="true"
-            />
-
-            <CardHeader className="relative flex items-start justify-between gap-4">
-              <div>
-                <h3 className="text-lg font-semibold text-slate-900">Your AI Memory</h3>
-                <p className="mt-1 text-sm text-slate-500">Saved context used to personalize replies.</p>
+                <div className="flex space-x-2 ml-4">
+                  <Button 
+                    size="sm" 
+                    onClick={() => {
+                      // Navigate to the appropriate detail page based on item type
+                      switch(item.type) {
+                        case 'document':
+                          window.location.href = `/documents/${item.id}`;
+                          break;
+                        case 'proposal':
+                          window.location.href = `/proposals/${item.id}`;
+                          break;
+                        case 'project':
+                          window.location.href = `/projects/${item.id}`;
+                          break;
+                        case 'customer':
+                          window.location.href = `/customers/${item.id}`;
+                          break;
+                        case 'message':
+                          window.location.href = `/messages/${item.id}`;
+                          break;
+                        default:
+                          window.location.href = `/${item.type}s/${item.id}`;
+                      }
+                    }}
+                  >
+                    View
+                  </Button>
+                  <Button 
+                    size="sm" 
+                    variant="secondary"
+                    onClick={() => {
+                      // Process the item based on its type
+                      console.log(`Processing item: ${item.id}`);
+                      // Add processing logic here
+                    }}
+                  >
+                    Process
+                  </Button>
+                </div>
               </div>
-              <Button variant="secondary" size="sm" onClick={() => setMemoryOpen(false)}>
-                Close
-              </Button>
-            </CardHeader>
-
-            <CardContent className="relative">
-              <div className="no-scrollbar max-h-[65vh] space-y-3 overflow-auto pr-1">
-                {memoryLoading ? <p className="text-sm text-slate-500">Loading memory…</p> : null}
-                {!memoryLoading && memories.length === 0 ? <p className="text-sm text-slate-500">No memory items yet.</p> : null}
-
-                {!memoryLoading
-                  ? memories.map((memory) => (
-                      <div
-                        key={memory.id}
-                        className="flex items-start justify-between gap-3 rounded-2xl border border-slate-200 bg-white p-3 shadow-sm ring-1 ring-slate-900/5"
-                      >
-                        <div className="min-w-0">
-                          <p className="text-xs uppercase tracking-wide text-slate-500">{memory.type}</p>
-                          <p className="mt-1 text-sm text-slate-700">{memory.content}</p>
-                          <p className="mt-1 text-xs text-slate-400">Relevance: {(memory.relevance * 100).toFixed(0)}%</p>
-                        </div>
-                        <Button variant="destructive" size="sm" onClick={() => void deleteMemory(memory.id)}>
-                          Delete
-                        </Button>
-                      </div>
-                    ))
-                  : null}
-              </div>
-            </CardContent>
-          </Card>
+            </Card>
+          ))}
         </div>
-      ) : null}
+      )}
     </div>
-  )
-}
+  );
+};
+
+export default InboxPage;

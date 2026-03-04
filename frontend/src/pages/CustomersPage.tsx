@@ -214,8 +214,8 @@ export default function CustomersPage() {
             <span className="h-2 w-2 rounded-full bg-sky-400 shadow-[0_0_10px_rgba(56,189,248,0.75)]" />
             CRM
           </div>
-          <h1 className="mt-3 text-2xl font-semibold text-slate-900">Customers</h1>
-          <p className="mt-1 text-sm text-slate-500">Track customer health and active work.</p>
+          <h1 className="mt-3 text-2xl font-semibold text-slate-900">Automation Clients</h1>
+          <p className="mt-1 text-sm text-slate-500">Track automation development client health and active projects.</p>
         </div>
 
         <Button onClick={() => setShowNewCustomer(true)}>New Customer</Button>

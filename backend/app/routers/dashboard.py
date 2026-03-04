@@ -1,189 +1,190 @@
-import logging
-
-from datetime import date, timedelta
 from fastapi import APIRouter, Depends, HTTPException
+from typing import Dict, Any
 from sqlalchemy.orm import Session
-from sqlalchemy import func
-from sqlalchemy.exc import SQLAlchemyError
-from app import models, schemas
-from app.deps import get_db, require_roles, get_current_user
-from app.rbac import ADMIN_ONLY_ROLES, READ_ROLES_ALL
-from app.services.dashboard import build_ncr_weekly_counts
+from sqlalchemy import func, desc
+from datetime import datetime, timedelta
+from ..database import get_db
+from ..models import Document, Customer, Project, Proposal, User, Message, Notification, Task, WorkLog, NCR, Issue, InspectionRecord
+from ..auth import get_current_user
 
-router = APIRouter(prefix="/dashboard", tags=["dashboard"])
-logger = logging.getLogger(__name__)
+router = APIRouter()
 
+@router.get("/dashboard/stats")
+async def get_dashboard_stats(
+    range: str = "month",
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+) -> Dict[str, Any]:
+    """
+    Get dashboard statistics focusing on projects, work orders, quality, and clients
+    instead of document-centric metrics.
+    """
+    # Calculate date range based on parameter
+    now = datetime.utcnow()
+    if range == "week":
+        start_date = now - timedelta(days=7)
+    elif range == "quarter":
+        start_date = now - timedelta(days=90)
+    else:  # month
+        start_date = now - timedelta(days=30)
 
-@router.get("/counts", response_model=schemas.DashboardCounts, dependencies=[Depends(require_roles(READ_ROLES_ALL))])
-def get_counts(db: Session = Depends(get_db)):
-    return schemas.DashboardCounts(
-        projects=db.query(models.Project).count(),
-        tasks=db.query(models.Task).count(),
-        pending_proposals=db.query(models.Proposal).filter(models.Proposal.status == "pending").count(),
-        ncrs=db.query(models.NCR).count(),
-    )
-
-
-@router.get(
-    "/summary",
-    response_model=schemas.DashboardSummary,
-    dependencies=[Depends(require_roles(READ_ROLES_ALL))],
-)
-def get_summary(db: Session = Depends(get_db)):
-    try:
-        tasks_by_status = dict(
-            db.query(models.Task.status, func.count(models.Task.id))
-            .group_by(models.Task.status)
-            .all()
-        )
-        projects_by_stage = dict(
-            db.query(models.Project.stage, func.count(models.Project.id))
-            .group_by(models.Project.stage)
-            .all()
-        )
-        ncr_date_rows = db.query(models.NCR.created_at, models.NCR.closed_date).all()
-        if ncr_date_rows:
-            created_dates = [row.created_at for row in ncr_date_rows]
-            closed_dates = [row.closed_date for row in ncr_date_rows]
-            ncrs_weekly = build_ncr_weekly_counts(created_dates, closed_dates)
-        else:
-            ncrs_weekly = []
-        return schemas.DashboardSummary(
-            projects=db.query(models.Project).count(),
-            open_tasks=db.query(models.Task).filter(models.Task.status == "open").count(),
-            open_issues=db.query(models.Issue).filter(models.Issue.status == "open").count(),
-            open_ncrs=db.query(models.NCR).filter(models.NCR.status == "open").count(),
-            pending_ai_actions=db.query(models.Proposal).filter(models.Proposal.status == "pending").count(),
-            ncrs_weekly=ncrs_weekly,
-            tasks_by_status=[{"status": key, "count": value} for key, value in tasks_by_status.items()],
-            projects_by_stage=[{"stage": key, "count": value} for key, value in projects_by_stage.items()],
-        )
-    except SQLAlchemyError as exc:
-        logger.exception("Dashboard summary unavailable due to database error")
-        raise HTTPException(status_code=503, detail="Database unavailable. Run migrations and verify DB settings.") from exc
-
-
-@router.get("/admin", response_model=schemas.DashboardAdmin, dependencies=[Depends(require_roles(ADMIN_ONLY_ROLES))])
-def admin_dashboard(db: Session = Depends(get_db)):
-    counts = {
-        "users": db.query(models.User).count(),
-        "customers": db.query(models.Customer).count(),
-        "projects": db.query(models.Project).count(),
-        "proposals": db.query(models.Proposal).count(),
-        "documents": db.query(models.Document).count(),
+    # Project statistics
+    total_projects = db.query(Project).count()
+    active_projects = db.query(Project).filter(
+        Project.status != 'completed'
+    ).count()
+    completed_projects = db.query(Project).filter(
+        Project.status == 'completed'
+    ).count()
+    
+    # Work order (Task) statistics
+    total_tasks = db.query(Task).count()
+    open_tasks = db.query(Task).filter(Task.status == 'open').count()
+    in_progress_tasks = db.query(Task).filter(Task.status == 'in_progress').count()
+    completed_tasks = db.query(Task).filter(Task.status == 'completed').count()
+    
+    # Quality statistics (NCRs, Issues, Inspections)
+    total_ncrs = db.query(NCR).count()
+    open_ncrs = db.query(NCR).filter(NCR.status == 'open').count()
+    closed_ncrs = db.query(NCR).filter(NCR.status == 'closed').count()
+    total_issues = db.query(Issue).count()
+    open_issues = db.query(Issue).filter(Issue.status == 'open').count()
+    total_inspections = db.query(InspectionRecord).count()
+    open_inspections = db.query(InspectionRecord).filter(InspectionRecord.status == 'open').count()
+    
+    # Client (Customer) statistics
+    total_customers = db.query(Customer).count()
+    active_customers = db.query(Customer).filter(Customer.status == 'active').count()
+    lead_customers = db.query(Customer).filter(Customer.status == 'lead').count()
+    total_proposals = db.query(Proposal).count()
+    
+    # Pending proposals
+    pending_proposals = db.query(Proposal).filter(
+        Proposal.status == 'pending'
+    ).count()
+    
+    # Approved proposals
+    approved_proposals = db.query(Proposal).filter(
+        Proposal.status == 'approved'
+    ).count()
+    
+    # Work log statistics
+    total_work_logs = db.query(WorkLog).count()
+    recent_work_logs = db.query(WorkLog).filter(WorkLog.date >= start_date.date()).count()
+    
+    # Project status distribution
+    project_statuses = db.query(
+        Project.status.label('status'),
+        func.count(Project.id).label('count')
+    ).group_by(Project.status).all()
+    
+    project_status_data = [
+        {"status": ps.status or "Unknown", "count": ps.count} 
+        for ps in project_statuses
+    ]
+    
+    # Task trends over time
+    if range == "week":
+        date_group = func.to_char(Task.created_at, 'YYYY-MM-DD')
+    elif range == "quarter":
+        date_group = func.to_char(Task.created_at, 'YYYY-"Q"Q')
+    else:  # month
+        date_group = func.to_char(Task.created_at, 'YYYY-MM')
+    
+    task_trends = db.query(
+        date_group.label('date'),
+        func.count(Task.id).label('count')
+    ).filter(Task.created_at >= start_date).group_by(date_group).order_by('date').all()
+    
+    task_trends_data = [
+        {"date": str(dt.date), "count": dt.count} 
+        for dt in task_trends
+    ]
+    
+    # Recent activity (projects, tasks, customers, quality items)
+    recent_activities = []
+    
+    # Recent projects
+    recent_projects = db.query(Project).filter(Project.created_at >= start_date).order_by(desc(Project.created_at)).limit(5).all()
+    for proj in recent_projects:
+        recent_activities.append({
+            "type": "project",
+            "action": f"Created project: {proj.name}",
+            "description": f"Project: {proj.name} for {proj.customer.name if proj.customer else 'Unknown Customer'}",
+            "timestamp": proj.created_at.strftime("%Y-%m-%d %H:%M") if proj.created_at else "Unknown"
+        })
+    
+    # Recent tasks
+    recent_tasks = db.query(Task).filter(Task.created_at >= start_date).order_by(desc(Task.created_at)).limit(5).all()
+    for task in recent_tasks:
+        recent_activities.append({
+            "type": "task",
+            "action": f"Created task: {task.title}",
+            "description": f"Task in project: {task.project.name if task.project else 'Unknown Project'}",
+            "timestamp": task.created_at.strftime("%Y-%m-%d %H:%M") if task.created_at else "Unknown"
+        })
+    
+    # Recent customers
+    recent_customers = db.query(Customer).filter(Customer.created_at >= start_date).order_by(desc(Customer.created_at)).limit(5).all()
+    for cust in recent_customers:
+        recent_activities.append({
+            "type": "customer",
+            "action": f"Added customer: {cust.name}",
+            "description": f"Customer status: {cust.status}",
+            "timestamp": cust.created_at.strftime("%Y-%m-%d %H:%M") if cust.created_at else "Unknown"
+        })
+    
+    # Recent NCRs
+    recent_ncrs = db.query(NCR).filter(NCR.created_at >= start_date).order_by(desc(NCR.created_at)).limit(5).all()
+    for ncr in recent_ncrs:
+        recent_activities.append({
+            "type": "ncr",
+            "action": f"NCR opened: {ncr.description[:50]}...",
+            "description": f"In project: {ncr.project.name if ncr.project else 'Unknown Project'}",
+            "timestamp": ncr.created_at.strftime("%Y-%m-%d %H:%M") if ncr.created_at else "Unknown"
+        })
+    
+    # Sort activities by timestamp descending
+    recent_activities.sort(key=lambda x: x['timestamp'], reverse=True)
+    recent_activities = recent_activities[:8]  # Limit to 8 most recent
+    
+    # Top contributors (users with most task assignments and work logs)
+    top_contributors = db.query(
+        User.name.label('name'),
+        User.email.label('email'),
+        func.count(Task.id).label('tasks'),
+        func.count(WorkLog.id).label('work_logs'),
+        (func.coalesce(func.count(Task.id), 0) + func.coalesce(func.count(WorkLog.id), 0)).label('score')
+    ).outerjoin(Task, Task.owner_id == User.id).outerjoin(WorkLog, WorkLog.user_id == User.id).group_by(User.id, User.name, User.email).order_by(desc((func.coalesce(func.count(Task.id), 0) + func.coalesce(func.count(WorkLog.id), 0)))).limit(10).all()
+    
+    top_contributors_data = [
+        {
+            "name": tc.name or "Unknown User",
+            "email": tc.email or "",
+            "tasks": tc.tasks or 0,
+            "work_logs": tc.work_logs or 0,
+            "score": min(int(tc.score or 0), 100)  # Cap score at 100%
+        }
+        for tc in top_contributors
+    ]
+    
+    # Additional stats for the dashboard cards
+    pending_reviews = db.query(Notification).filter(Notification.is_read == False).count()
+    overdue_tasks = db.query(Task).filter(Task.due_date < datetime.now(), Task.status != 'completed').count()
+    
+    return {
+        "total_projects": total_projects,
+        "active_projects": active_projects,
+        "total_tasks": total_tasks,
+        "open_tasks": open_tasks,
+        "total_customers": total_customers,
+        "active_customers": active_customers,
+        "total_ncrs": total_ncrs,
+        "open_ncrs": open_ncrs,
+        "pending_reviews": pending_reviews,
+        "overdue_tasks": overdue_tasks,
+        "project_statuses": project_status_data,
+        "task_trends": task_trends_data,
+        "recent_activity": recent_activities,
+        "top_contributors": top_contributors_data
     }
-    queue = dict(
-        db.query(models.Document.processing_status, func.count(models.Document.id))
-        .group_by(models.Document.processing_status)
-        .all()
-    )
-    recent_audit = (
-        db.query(models.AuditEvent)
-        .order_by(models.AuditEvent.created_at.desc())
-        .limit(20)
-        .all()
-    )
-    needs_review = db.query(models.Document).filter(models.Document.needs_review.is_(True)).count()
-    return schemas.DashboardAdmin(
-        counts=counts,
-        queue={
-            "queued": queue.get("queued", 0),
-            "processing": queue.get("processing", 0),
-            "failed": queue.get("failed", 0),
-            "needs_review": needs_review,
-        },
-        recent_audit_events=[
-            {
-                "id": event.id,
-                "entity_table": event.entity_table,
-                "entity_id": event.entity_id,
-                "action": event.action,
-                "created_at": event.created_at,
-            }
-            for event in recent_audit
-        ],
-    )
-
-
-@router.get("/sales", response_model=schemas.DashboardSales, dependencies=[Depends(require_roles(["Admin", "Sales"]))])
-def sales_dashboard(db: Session = Depends(get_db)):
-    customer_status = dict(
-        db.query(models.Customer.status, func.count(models.Customer.id))
-        .group_by(models.Customer.status)
-        .all()
-    )
-    proposal_status = dict(
-        db.query(models.Proposal.status, func.count(models.Proposal.id))
-        .group_by(models.Proposal.status)
-        .all()
-    )
-    stale_cutoff = date.today() - timedelta(days=30)
-    stale_customers = []
-    for customer in db.query(models.Customer).all():
-        doc_time = (
-            db.query(func.max(models.Document.created_at))
-            .filter(models.Document.customer_id == customer.id)
-            .scalar()
-        )
-        audit_time = (
-            db.query(func.max(models.AuditEvent.created_at))
-            .filter(models.AuditEvent.entity_table == "customers", models.AuditEvent.entity_id == customer.id)
-            .scalar()
-        )
-        last_activity = max([t for t in [doc_time, audit_time] if t], default=None)
-        if not last_activity or last_activity.date() <= stale_cutoff:
-            stale_customers.append({"id": customer.id, "name": customer.name, "last_activity_at": last_activity})
-    return schemas.DashboardSales(
-        customer_status_counts=customer_status,
-        proposal_status_counts=proposal_status,
-        stale_customers=stale_customers,
-    )
-
-
-@router.get("/engineering", response_model=schemas.DashboardEngineering, dependencies=[Depends(require_roles(["Admin", "Engineer"]))])
-def engineering_dashboard(db: Session = Depends(get_db), user: models.User = Depends(get_current_user)):
-    my_tasks = db.query(models.Task).filter(models.Task.owner_id == user.id).order_by(models.Task.created_at.desc()).all()
-    if not my_tasks:
-        my_tasks = db.query(models.Task).filter(models.Task.status == "open").order_by(models.Task.created_at.desc()).limit(10).all()
-    blocked_tasks = db.query(models.Task).filter(models.Task.status == "blocked").order_by(models.Task.created_at.desc()).limit(10).all()
-    due_soon = date.today() + timedelta(days=14)
-    projects_due = (
-        db.query(models.Project)
-        .filter(models.Project.due_date.isnot(None), models.Project.due_date <= due_soon)
-        .order_by(models.Project.due_date.asc())
-        .limit(10)
-        .all()
-    )
-    return schemas.DashboardEngineering(
-        my_tasks=[{"id": t.id, "title": t.title, "status": t.status} for t in my_tasks],
-        blocked_tasks=[{"id": t.id, "title": t.title, "status": t.status} for t in blocked_tasks],
-        projects_due_soon=[{"id": p.id, "name": p.name, "due_date": p.due_date} for p in projects_due],
-    )
-
-
-@router.get("/quality", response_model=schemas.DashboardQuality, dependencies=[Depends(require_roles(["Admin", "QC"]))])
-def quality_dashboard(db: Session = Depends(get_db)):
-    issue_counts = dict(
-        db.query(models.Issue.severity, func.count(models.Issue.id))
-        .filter(models.Issue.status == "open")
-        .group_by(models.Issue.severity)
-        .all()
-    )
-    worst_projects = (
-        db.query(models.Project, func.count(models.Issue.id).label("issue_count"))
-        .join(models.Issue, models.Issue.project_id == models.Project.id)
-        .filter(models.Issue.status == "open")
-        .group_by(models.Project.id)
-        .order_by(func.count(models.Issue.id).desc())
-        .limit(5)
-        .all()
-    )
-    documents_needing_review = db.query(models.Document).filter(models.Document.needs_review.is_(True)).count()
-    return schemas.DashboardQuality(
-        issue_counts=issue_counts,
-        worst_projects=[
-            {"id": project.id, "name": project.name, "open_issues": count}
-            for project, count in worst_projects
-        ],
-        documents_needing_review=documents_needing_review,
-    )

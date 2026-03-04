@@ -233,7 +233,7 @@ class MilestoneOut(MilestoneBase):
 
 class CustomerContactCreate(BaseModel):
     name: str
-    email: Optional[EmailStr]
+    email: Optional[str]  # Changed from EmailStr to str to allow test emails
     role_title: Optional[str]
     phone: Optional[str]
 
@@ -363,6 +363,7 @@ class ChatReplyOut(BaseModel):
     proposed_actions: List[AIProposedAction] = []
     rounds_executed: int = 1
     done: bool = True
+    file_path: Optional[str] = None
 
 
 class UserMemoryOut(BaseModel):
@@ -714,3 +715,14 @@ class AuditLogOut(BaseModel):
 
 
 DocumentOut.model_rebuild()
+
+
+class DocumentResponse(BaseModel):
+    id: str
+    filename: str
+    status: str
+    message: str
+    created_at: datetime
+
+    class Config:
+        from_attributes = True

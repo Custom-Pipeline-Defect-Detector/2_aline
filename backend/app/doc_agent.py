@@ -197,3 +197,10 @@ def run_document_agent(document_id: int, model: str = "qwen2.5-coder:7b", prompt
         raise
     finally:
         db.close()
+
+
+def process_document_with_agents(document_id: int, model: str = "qwen2.5-coder:7b"):
+    """
+    Process a document with agents - wrapper function for document processing service
+    """
+    run_document_agent(document_id, model)

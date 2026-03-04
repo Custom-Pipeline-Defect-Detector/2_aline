@@ -23,6 +23,9 @@ logger.setLevel(logging.INFO)
 
 MAX_RETRIES = 2
 
+# Configure Celery to avoid the superuser warning
+celery.conf.worker_pool = 'solo'
+
 
 def _write_text_file(doc_id: int, version: int, text: str) -> str:
     base = Path(settings.file_storage_root)

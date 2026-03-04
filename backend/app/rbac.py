@@ -1,6 +1,10 @@
 from __future__ import annotations
 
 from typing import Final
+from fastapi import HTTPException, Depends
+from sqlalchemy.orm import Session
+from . import models
+from .auth import get_current_user
 
 READ_ROLES_ALL: Final = ["Admin", "Manager", "PM", "Sales", "Engineer", "Technician", "QC", "Viewer"]
 WRITE_ROLES_DEFAULT: Final = ["Admin", "Manager", "PM", "Sales", "Engineer", "Technician", "QC"]
@@ -31,3 +35,12 @@ NOTIFICATION_WRITE_ROLES: Final = WRITE_ROLES_DEFAULT
 
 ADMIN_ONLY_ROLES: Final = ["Admin"]
 MANAGER_ADMIN_ROLES: Final = ["Admin", "Manager"]
+
+def require_role(required_roles: list):
+    """Dependency to check if user has required role(s)"""
+    async def role_checker(current_user: models.User = Depends(get_current_user)):
+        user_roles = [role.name for role in current_user.roles]
+        if not any(role in user_roles for role in required_roles):
+            raise HTTPException(status_code=403, detail="Operation not permitted")
+        return current_user
+    return role_checker

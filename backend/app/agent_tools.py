@@ -5,6 +5,7 @@ from sqlalchemy.orm import Session
 from app import models
 from app.database import SessionLocal
 from app.services.customers import find_similar_customer
+from app.services.excel_generator import generate_excel_from_query
 
 
 class ToolResult(BaseModel):
@@ -197,6 +198,10 @@ class RejectProposalArgs(BaseModel):
 class AutoApprovePendingProposalsArgs(BaseModel):
     limit: Optional[int] = 100
     actor_user_id: Optional[int] = None
+
+
+class GenerateExcelArgs(BaseModel):
+    query: str  # Natural language query describing what data to extract for the Excel file
 
 
 def _get_db() -> Session:
@@ -1027,6 +1032,29 @@ def auto_approve_pending_proposals(args: AutoApprovePendingProposalsArgs) -> Too
         db.close()
 
 
+def generate_excel(args: GenerateExcelArgs) -> ToolResult:
+    """Generate an Excel file based on a natural language query."""
+    db = _get_db()
+    try:
+        # Generate the Excel file based on the query
+        filepath = generate_excel_from_query(args.query, db)
+        return ToolResult(
+            success=True,
+            data={
+                "filepath": filepath,
+                "message": f"Excel file generated successfully at {filepath}",
+                "query": args.query
+            }
+        )
+    except Exception as e:
+        return ToolResult(
+            success=False,
+            data={"error": f"Failed to generate Excel file: {str(e)}"}
+        )
+    finally:
+        db.close()
+
+
 TOOL_REGISTRY = {
     "get_document_context": (DocumentContextArgs, get_document_context),
     "set_document_classification": (DocumentClassificationArgs, set_document_classification),
@@ -1052,6 +1080,7 @@ TOOL_REGISTRY = {
     "approve_proposal": (ApproveProposalArgs, approve_proposal),
     "reject_proposal": (RejectProposalArgs, reject_proposal),
     "auto_approve_pending_proposals": (AutoApprovePendingProposalsArgs, auto_approve_pending_proposals),
+    "generate_excel": (GenerateExcelArgs, generate_excel),
 }
 
 

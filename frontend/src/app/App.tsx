@@ -14,7 +14,7 @@ function Nav() {
   const token = getToken();
   return (
     <div className="border-b p-3 flex gap-4 items-center">
-      <div className="font-semibold">Aline AI MVP</div>
+      <div className="font-semibold">AutoDev Automation Platform</div>
       {token && (
         <>
           <Link to="/dashboard" className="text-blue-700">Dashboard</Link>

@@ -3,6 +3,7 @@ import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom'
 import { useAuth } from '../auth/AuthContext'
 import PermissionDebugPanel from './PermissionDebugPanel'
 import type { Role } from '../auth/permissions'
+import NotificationBadge from './NotificationBadge';
 
 const navItems: {
   label: string
@@ -13,12 +14,15 @@ const navItems: {
   { label: 'Inbox', to: '/inbox', icon: '🤖', roles: ['Admin', 'Manager', 'PM', 'Sales', 'Engineer', 'Technician', 'QC', 'Viewer'] },
   { label: 'Dashboard', to: '/dashboard', icon: '📊', roles: ['Admin', 'Manager', 'PM', 'Sales'] },
   { label: 'Projects', to: '/projects', icon: '🧭', roles: ['Admin', 'Manager', 'PM', 'Sales', 'Engineer', 'Technician', 'QC'] },
-  { label: 'Work', to: '/work', icon: '🛠️', roles: ['Admin', 'Manager', 'PM', 'Sales', 'Engineer', 'Technician', 'QC'] },
+  { label: 'Work Orders', to: '/work', icon: '🛠️', roles: ['Admin', 'Manager', 'PM', 'Sales', 'Engineer', 'Technician', 'QC'] },
   { label: 'Quality', to: '/quality', icon: '✅', roles: ['Admin', 'Manager', 'QC', 'Engineer', 'Technician'] },
-  { label: 'CRM', to: '/customers', icon: '🏢', roles: ['Admin', 'Manager', 'Sales', 'PM'] },
+  { label: 'Customers', to: '/customers', icon: '🏢', roles: ['Admin', 'Manager', 'Sales', 'PM'] },
   { label: 'Messages', to: '/messages', icon: '💬', roles: ['Admin', 'Manager', 'PM', 'Sales', 'Engineer', 'Technician', 'QC', 'Viewer'] },
-  { label: 'Documents', to: '/documents', icon: '📄', roles: ['Admin', 'Manager', 'PM', 'Sales', 'Engineer', 'Technician', 'QC', 'Viewer'] },
-  { label: 'Admin', to: '/status', icon: '🧰', roles: ['Admin', 'Manager'] },
+  { label: 'Company Files', to: '/documents', icon: '📦', roles: ['Admin', 'Manager', 'PM', 'Sales', 'Engineer', 'Technician', 'QC', 'Viewer'] },
+  { label: 'File Processing', to: '/processing', icon: '⚙️', roles: ['Admin', 'Manager', 'PM', 'Sales', 'Engineer', 'Technician', 'QC', 'Viewer'] },
+  { label: 'Search', to: '/search', icon: '🔍', roles: ['Admin', 'Manager', 'PM', 'Sales', 'Engineer', 'Technician', 'QC', 'Viewer'] },
+  { label: 'AI Assistant', to: '/ai-assistant', icon: '🤖', roles: ['Admin', 'Manager', 'PM', 'Sales', 'Engineer', 'Technician', 'QC', 'Viewer'] },
+  { label: 'System Admin', to: '/status', icon: '🧰', roles: ['Admin', 'Manager'] },
 ]
 
 // Small, dependency-free class join helper
@@ -219,7 +223,7 @@ export default function AppShell() {
   )
 
   const currentTitle =
-    visibleNavItems.find((item) => location.pathname.startsWith(item.to))?.label ?? 'Aline Ops'
+    visibleNavItems.find((item) => location.pathname.startsWith(item.to))?.label ?? 'ALINE'
 
   // Close drawer when route changes (feels polished)
   React.useEffect(() => {
@@ -264,13 +268,13 @@ export default function AppShell() {
         aria-label="Mobile navigation"
       >
         <div className="flex items-center justify-between px-4 py-4">
-          <div className="flex items-center gap-3">
-            <BrandMark />
-            <div>
-              <div className="text-sm font-semibold text-slate-900">Aline Ops</div>
-              <div className="text-xs text-slate-500">Industrial AI Workspace</div>
+            <div className="flex items-center gap-3">
+              <BrandMark />
+              <div>
+              <div className="text-sm font-semibold text-slate-900">AutoDev</div>
+              <div className="text-xs text-slate-500">Automation Development Platform</div>
             </div>
-          </div>
+            </div>
 
           <button
             className="grid h-10 w-10 place-items-center rounded-xl border border-slate-200 text-slate-700 active:scale-[0.98]"
@@ -289,7 +293,12 @@ export default function AppShell() {
 
           <nav className="mt-4 space-y-1">
             {visibleNavItems.map((item) => (
-              <NavItem key={item.to} to={item.to} icon={item.icon} label={item.label} />
+              <React.Fragment key={item.to}>
+                <NavItem to={item.to} icon={item.icon} label={item.label} />
+                {item.to === '/documents' && (
+                  <div className="ml-10 text-xs text-slate-500">Documents, contracts, specs</div>
+                )}
+              </React.Fragment>
             ))}
           </nav>
 
@@ -313,15 +322,20 @@ export default function AppShell() {
           <div className="rounded-2xl bg-white p-4 shadow-sm ring-1 ring-slate-900/10">
             <div className="flex items-center gap-3">
               <BrandMark />
-              <div>
-                <div className="text-sm font-semibold text-slate-900">Aline Ops</div>
-                <div className="text-xs text-slate-500">Industrial AI Workspace</div>
-              </div>
+            <div>
+              <div className="text-sm font-semibold text-slate-900">AutoDev</div>
+              <div className="text-xs text-slate-500">Automation Development Platform</div>
+            </div>
             </div>
 
             <nav className="mt-4 space-y-1">
               {visibleNavItems.map((item) => (
-                <NavItem key={item.to} to={item.to} icon={item.icon} label={item.label} />
+                <React.Fragment key={item.to}>
+                  <NavItem to={item.to} icon={item.icon} label={item.label} />
+                  {item.to === '/documents' && (
+                    <div className="ml-10 text-xs text-slate-500">Documents, contracts, specs</div>
+                  )}
+                </React.Fragment>
               ))}
             </nav>
           </div>
@@ -333,13 +347,13 @@ export default function AppShell() {
                 className="flex-1 rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-700 transition hover:bg-slate-50 active:scale-[0.98]"
                 onClick={() => navigate('/documents')}
               >
-                Upload docs
+                Upload Company Files
               </button>
               <button
                 className="flex-1 rounded-xl bg-slate-900 px-3 py-2 text-sm font-semibold text-white transition hover:bg-slate-800 active:scale-[0.98]"
                 onClick={() => navigate('/inbox')}
               >
-                Review AI
+                Review Tasks
               </button>
             </div>
           </div>
@@ -373,6 +387,8 @@ export default function AppShell() {
                   <div className="hidden rounded-full bg-slate-100 px-3 py-1 text-xs font-medium text-slate-600 md:block">
                     {user?.name || user?.email || 'User'}
                   </div>
+
+                  <NotificationBadge />
 
                   <button
                     className="rounded-xl bg-slate-900 px-3 py-2 text-sm font-semibold text-white transition hover:bg-slate-800 active:scale-[0.98]"

@@ -45,11 +45,13 @@ def list_customers(status: str | None = None, q: str | None = None, db: Session 
         for customer in customers:
             documents_count = db.query(models.Document).filter(models.Document.customer_id == customer.id).count()
             active_projects = db.query(models.Project).filter(models.Project.customer_id == customer.id).count()
+            # Ensure aliases is always a list
+            aliases = customer.aliases if isinstance(customer.aliases, list) else []
             results.append(
                 schemas.CustomerOut(
                     id=customer.id,
                     name=customer.name,
-                    aliases=customer.aliases,
+                    aliases=aliases,
                     status=customer.status,
                     industry=customer.industry,
                     owner_id=customer.owner_id,
@@ -162,10 +164,12 @@ def get_customer(customer_id: int, db: Session = Depends(get_db)):
             }
         )
     documents_count = db.query(models.Document).filter(models.Document.customer_id == customer.id).count()
+    # Ensure aliases is always a list
+    aliases = customer.aliases if isinstance(customer.aliases, list) else []
     return schemas.CustomerOut(
         id=customer.id,
         name=customer.name,
-        aliases=customer.aliases,
+        aliases=aliases,
         status=customer.status,
         industry=customer.industry,
         owner_id=customer.owner_id,
@@ -209,10 +213,12 @@ def update_customer(
     )
     db.commit()
     documents_count = db.query(models.Document).filter(models.Document.customer_id == customer.id).count()
+    # Ensure aliases is always a list
+    aliases = customer.aliases if isinstance(customer.aliases, list) else []
     return schemas.CustomerOut(
         id=customer.id,
         name=customer.name,
-        aliases=customer.aliases,
+        aliases=aliases,
         status=customer.status,
         industry=customer.industry,
         owner_id=customer.owner_id,

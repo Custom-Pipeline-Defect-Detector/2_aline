@@ -1,6 +1,7 @@
 from pathlib import Path
 import hashlib
 import mimetypes
+import magic  # python-magic for better MIME type detection
 from typing import List
 
 from fastapi import APIRouter, BackgroundTasks, Depends, File, UploadFile, HTTPException
@@ -13,6 +14,7 @@ from app.deps import get_db, require_roles, get_current_user
 from app.rbac import DOCUMENTS_READ_ROLES, DOCUMENTS_WRITE_ROLES
 from app.core.config import settings
 from app.tasks import extract_and_propose, process_document
+from app.security import sanitize_input, is_safe_filename
 
 router = APIRouter(prefix="/documents", tags=["documents"])
 
@@ -41,22 +43,34 @@ def _validate_file_size(file: UploadFile) -> None:
 
 
 def _validate_file_type(file: UploadFile) -> None:
-    """Validate that the file type is allowed."""
+    """Validate that the file type is allowed using both extension and content detection."""
     if not _allowed_file(file.filename or ""):
         raise HTTPException(
             status_code=400,
             detail=f"File type not allowed. Allowed types: {settings.allowed_file_types}"
         )
     
-    # Additional validation based on MIME type
-    mime_type = file.content_type or mimetypes.guess_type(file.filename or "")[0] or ""
-    if not any(allowed_type in mime_type.lower() for allowed_type in ALLOWED_EXTENSIONS):
+    # Read file contents to detect actual MIME type with python-magic
+    file.file.seek(0)  # Go to beginning of file
+    contents = file.file.read(2048)  # Read first 2KB to detect type
+    detected_mime = magic.from_buffer(contents, mime=True)
+    file.file.seek(0)  # Reset file pointer to beginning
+    
+    # Check if detected MIME type is in allowed types
+    if not any(allowed_type in detected_mime.lower() for allowed_type in ALLOWED_EXTENSIONS):
         # For security, we'll also check against common dangerous file types
-        dangerous_types = ['application/x-executable', 'application/x-msdownload', 'application/x-sh', 'text/html']
-        if any(dangerous in mime_type.lower() for dangerous in dangerous_types):
+        dangerous_types = ['application/x-executable', 'application/x-msdownload', 'application/x-sh', 'text/html', 'application/javascript', 'text/javascript']
+        if any(dangerous in detected_mime.lower() for dangerous in dangerous_types):
             raise HTTPException(
                 status_code=400,
                 detail="Potentially dangerous file type detected"
+            )
+        # Additional check: if extension suggests it's allowed but content detection says otherwise, warn
+        file_ext = file.filename.rsplit('.', 1)[-1].lower() if '.' in file.filename else ''
+        if file_ext in ALLOWED_EXTENSIONS and detected_mime not in ALLOWED_EXTENSIONS:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Suspicious file detected. Extension suggests {file_ext}, but content appears to be {detected_mime}"
             )
 
 
@@ -67,8 +81,17 @@ def _hash_file(contents: bytes) -> str:
 
 def _sanitize_filename(filename: str) -> str:
     """Sanitize filename to prevent path traversal attacks."""
+    # Sanitize the input first
+    sanitized = sanitize_input(filename) if filename else filename
+    if not sanitized:
+        raise HTTPException(status_code=400, detail="Invalid filename provided")
+    
+    # Check if filename is safe
+    if not is_safe_filename(sanitized):
+        raise HTTPException(status_code=400, detail="Unsafe filename detected")
+    
     # Remove any path separators to prevent directory traversal
-    sanitized = filename.replace("/", "_").replace("\\", "_")
+    sanitized = sanitized.replace("/", "_").replace("\\", "_")
     # Limit length to prevent overly long filenames
     return sanitized[:255]
 
@@ -333,4 +356,64 @@ def get_reprocess_status(document_id: int, db: Session = Depends(get_db)):
         raise HTTPException(status_code=404, detail="Document not found")
     return schemas.DocumentProcessingStatusOut(
         document_id=document.id, status=document.processing_status, processing_error=document.processing_error
+    )
+
+
+@router.post(
+    "/{document_id}/retry",
+    response_model=schemas.DocumentOut,
+    dependencies=[
+        Depends(
+            require_roles(DOCUMENTS_WRITE_ROLES)
+        )
+    ],
+)
+def retry_failed_document(document_id: int, background_tasks: BackgroundTasks, db: Session = Depends(get_db)):
+    document = db.query(models.Document).filter_by(id=document_id).first()
+    if not document:
+        raise HTTPException(status_code=404, detail="Document not found")
+    
+    if document.processing_status != "failed":
+        raise HTTPException(status_code=400, detail="Only failed documents can be retried")
+    
+    # Reset document status to queued for retry
+    document.processing_status = "queued"
+    document.processing_error = None
+    db.commit()
+    db.refresh(document)
+
+    # Re-run the processing tasks
+    if settings.run_tasks_inline:
+        background_tasks.add_task(process_document, document.id)
+    else:
+        process_document.delay(document.id)
+
+    # Return the updated document
+    document_with_relations = _get_document_with_relations(db, document_id)
+    return _serialize_document(document_with_relations)
+
+
+@router.get("/download-excel/{filename:path}")
+def download_excel_file(filename: str, db: Session = Depends(get_db)):
+    """Download an Excel file generated by the AI assistant."""
+    # Sanitize the filename to prevent path traversal attacks
+    if not is_safe_filename(filename):
+        raise HTTPException(status_code=400, detail="Unsafe filename detected")
+    
+    # Construct the file path
+    uploads_dir = Path("uploads")
+    file_path = uploads_dir / filename
+    
+    # Check if the file exists
+    if not file_path.exists():
+        raise HTTPException(status_code=404, detail="Excel file not found")
+    
+    # Verify that the file is indeed an Excel file
+    if not (file_path.suffix.lower() == '.xlsx' or file_path.suffix.lower() == '.xls'):
+        raise HTTPException(status_code=400, detail="File is not an Excel file")
+    
+    return FileResponse(
+        path=file_path,
+        filename=filename,
+        media_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
     )

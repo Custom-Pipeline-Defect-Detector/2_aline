@@ -159,8 +159,8 @@ export default function WorkPage() {
     <div className="space-y-6">
       <div className="flex flex-wrap items-center justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-semibold text-slate-900">Work</h1>
-          <p className="text-sm text-slate-500">Track tasks and daily work logs.</p>
+          <h1 className="text-2xl font-semibold text-slate-900">Automation Work Orders</h1>
+          <p className="text-sm text-slate-500">Track automation development tasks and daily work logs.</p>
         </div>
         <Button variant={mineOnly ? 'secondary' : 'ghost'} onClick={() => setMineOnly((prev) => !prev)}>
           {mineOnly ? 'Showing My Work' : 'My Work'}

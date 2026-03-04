@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import json
+import os
 import queue
+import re
 import threading
 import time
 from datetime import datetime
@@ -18,6 +20,12 @@ from app.deps import get_current_user, get_db
 from app.ollama_client import _chat, _chat_stream
 
 router = APIRouter(prefix="/ai", tags=["ai"])
+
+# Add a dependency to ensure user is authenticated for all AI chat routes
+def require_authenticated_user(current_user: models.User = Depends(get_current_user)) -> models.User:
+    if not current_user:
+        raise HTTPException(status_code=401, detail="Authentication required")
+    return current_user
 
 SYSTEM_PROMPT = (
     "You are an AI assistant embedded in an engineering inbox. "
@@ -625,7 +633,7 @@ def send_message(
     session_id: int,
     payload: schemas.ChatMessageCreate,
     db: Session = Depends(get_db),
-    current_user: models.User = Depends(get_current_user),
+    current_user: models.User = Depends(require_authenticated_user),
 ):
     session = _get_user_session_or_404(db, session_id=session_id, user_id=current_user.id)
     content = payload.message.strip()
@@ -662,6 +670,12 @@ def send_message(
     )
     recent_messages = list(reversed(recent_messages))
 
+    # Check if the reply contains a file path (e.g., "Excel file generated: uploads/filename.xlsx")
+    file_path_match = re.search(r'uploads/([^\s]+)', reply)
+    file_path = None
+    if file_path_match:
+        file_path = file_path_match.group(0)  # Full path like "uploads/filename.xlsx"
+
     memory_updated = _extract_memories(
         db,
         user_id=current_user.id,
@@ -669,7 +683,7 @@ def send_message(
         assistant_reply=reply,
     )
     db.commit()
-    return schemas.ChatReplyOut(reply=reply, memory_updated=memory_updated, proposed_actions=proposed_actions)
+    return schemas.ChatReplyOut(reply=reply, memory_updated=memory_updated, proposed_actions=proposed_actions, file_path=file_path)
 
 
 @router.post("/sessions/{session_id}/background-run", response_model=schemas.ChatBackgroundRunOut)
@@ -811,12 +825,19 @@ def stream_message(
                 )
                 db.commit()
 
+                # Check if the reply contains a file path (e.g., "Excel file generated: uploads/filename.xlsx")
+                file_path_match = re.search(r'uploads/([^\s]+)', reply)
+                file_path = None
+                if file_path_match:
+                    file_path = file_path_match.group(0)  # Full path like "uploads/filename.xlsx"
+
                 yield _sse_event(
                     "final",
                     {
                         "reply": reply,
                         "memory_updated": memory_updated,
                         "proposed_actions": [a.model_dump() for a in proposed_actions],
+                        "file_path": file_path,
                     },
                 )
                 break

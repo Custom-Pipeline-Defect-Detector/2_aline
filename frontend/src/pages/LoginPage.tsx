@@ -35,7 +35,7 @@ export default function LoginPage() {
     <div className="flex min-h-screen items-center justify-center bg-slate-50 px-4">
       <Card className="w-full max-w-md p-6">
         <h1 className="text-xl font-semibold text-slate-900">Login</h1>
-        <p className="mt-1 text-sm text-slate-500">Access Aline internal operations.</p>
+        <p className="mt-1 text-sm text-slate-500">Access AutoDev automation platform.</p>
         {error ? <p className="mt-3 text-sm text-red-600">{error}</p> : null}
         <form onSubmit={handleSubmit} className="mt-4 space-y-3">
           <div>

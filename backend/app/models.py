@@ -1,5 +1,6 @@
 from sqlalchemy import Column, Integer, String, Boolean, DateTime, Date, ForeignKey, Text, Float, UniqueConstraint
 from sqlalchemy.dialects.postgresql import JSONB
+from sqlalchemy.types import JSON
 from sqlalchemy.sql import func
 from sqlalchemy.orm import relationship
 from app.database import Base
@@ -35,12 +36,12 @@ class Customer(Base):
     __tablename__ = "customers"
     id = Column(Integer, primary_key=True)
     name = Column(String, nullable=False, unique=True)
-    aliases = Column(JSONB, nullable=False, default=list)
+    aliases = Column(JSON, nullable=False, default=list)
     status = Column(String, nullable=False, default="lead")
     industry = Column(String, nullable=True)
     owner_id = Column(Integer, ForeignKey("users.id"), nullable=True)
     notes = Column(Text, nullable=True)
-    tags = Column(JSONB, nullable=False, default=list)
+    tags = Column(JSON, nullable=False, default=list)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
 
@@ -87,7 +88,7 @@ class Document(Base):
     document_type = Column(String, nullable=True)
     classification_confidence = Column(Float, nullable=True)
     extracted_text = Column(Text, nullable=True)
-    extracted_fields = Column(JSONB, nullable=True)
+    extracted_fields = Column(JSON, nullable=True)
     agent_summary = Column(Text, nullable=True)
     needs_review = Column(Boolean, nullable=False, default=False)
     last_processed_at = Column(DateTime(timezone=True), nullable=True)
@@ -108,8 +109,8 @@ class DocumentVersion(Base):
     doc_id = Column(Integer, ForeignKey("documents.id", ondelete="CASCADE"), nullable=False)
     version = Column(Integer, nullable=False)
     extracted_text_path = Column(String, nullable=True)
-    router_json = Column(JSONB, nullable=True)
-    extractor_json = Column(JSONB, nullable=True)
+    router_json = Column(JSON, nullable=True)
+    extractor_json = Column(JSON, nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 
     document = relationship("Document", back_populates="versions")
@@ -172,10 +173,10 @@ class Proposal(Base):
     target_module = Column(String, nullable=False)
     target_table = Column(String, nullable=False)
     target_entity_id = Column(Integer, nullable=True)
-    proposed_fields = Column(JSONB, nullable=False)
-    field_confidence = Column(JSONB, nullable=False)
-    evidence = Column(JSONB, nullable=False)
-    questions = Column(JSONB, nullable=False)
+    proposed_fields = Column(JSON, nullable=False)
+    field_confidence = Column(JSON, nullable=False)
+    evidence = Column(JSON, nullable=False)
+    questions = Column(JSON, nullable=False)
     status = Column(String, nullable=False, default="pending")
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     reviewed_at = Column(DateTime(timezone=True), nullable=True)
@@ -191,8 +192,8 @@ class AuditLog(Base):
     action = Column(String, nullable=False)
     entity_table = Column(String, nullable=False)
     entity_id = Column(Integer, nullable=False)
-    before = Column(JSONB, nullable=True)
-    after = Column(JSONB, nullable=True)
+    before = Column(JSON, nullable=True)
+    after = Column(JSON, nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 
 
@@ -295,7 +296,7 @@ class AuditEvent(Base):
     entity_table = Column(String, nullable=False)
     entity_id = Column(Integer, nullable=False)
     action = Column(String, nullable=False)
-    payload_json = Column(JSONB, nullable=True)
+    payload_json = Column(JSON, nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 
 
@@ -307,8 +308,8 @@ class AgentRun(Base):
     prompt_version = Column(String, nullable=False, default="v1")
     started_at = Column(DateTime(timezone=True), server_default=func.now())
     ended_at = Column(DateTime(timezone=True), nullable=True)
-    tool_calls_json = Column(JSONB, nullable=True)
-    final_result_json = Column(JSONB, nullable=True)
+    tool_calls_json = Column(JSON, nullable=True)
+    final_result_json = Column(JSON, nullable=True)
     error = Column(Text, nullable=True)
 
     document = relationship("Document", back_populates="agent_runs")
