@@ -1,29 +1,20 @@
 import React from 'react'
 import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom'
 import { useAuth } from '../auth/AuthContext'
-import PermissionDebugPanel from './PermissionDebugPanel'
 import type { Role } from '../auth/permissions'
-import NotificationBadge from './NotificationBadge';
 
-const navItems: {
+const engineerNavItems: {
   label: string
   to: string
   icon: string
   roles?: Role[]
 }[] = [
-  { label: 'Inbox', to: '/inbox', icon: '🤖', roles: ['Admin', 'Manager', 'PM', 'Sales', 'Engineer', 'Technician', 'QC', 'Viewer'] },
-  { label: 'Dashboard', to: '/dashboard', icon: '📊', roles: ['Admin', 'Manager', 'PM', 'Sales'] },
-  { label: 'Projects', to: '/projects', icon: '🧭', roles: ['Admin', 'Manager', 'PM', 'Sales', 'Engineer', 'Technician', 'QC'] },
-  { label: 'Work Orders', to: '/work', icon: '🛠️', roles: ['Admin', 'Manager', 'PM', 'Sales', 'Engineer', 'Technician', 'QC'] },
-  { label: 'Quality', to: '/quality', icon: '✅', roles: ['Admin', 'Manager', 'QC', 'Engineer', 'Technician'] },
-  { label: 'Customers', to: '/customers', icon: '🏢', roles: ['Admin', 'Manager', 'Sales', 'PM'] },
-  { label: 'Messages', to: '/messages', icon: '💬', roles: ['Admin', 'Manager', 'PM', 'Sales', 'Engineer', 'Technician', 'QC', 'Viewer'] },
-  { label: 'Company Files', to: '/documents', icon: '📦', roles: ['Admin', 'Manager', 'PM', 'Sales', 'Engineer', 'Technician', 'QC', 'Viewer'] },
-  { label: 'File Processing', to: '/processing', icon: '⚙️', roles: ['Admin', 'Manager', 'PM', 'Sales', 'Engineer', 'Technician', 'QC', 'Viewer'] },
-  { label: 'Search', to: '/search', icon: '🔍', roles: ['Admin', 'Manager', 'PM', 'Sales', 'Engineer', 'Technician', 'QC', 'Viewer'] },
-  { label: 'AI Assistant', to: '/ai-assistant', icon: '🤖', roles: ['Admin', 'Manager', 'PM', 'Sales', 'Engineer', 'Technician', 'QC', 'Viewer'] },
-  { label: 'System Admin', to: '/status', icon: '🧰', roles: ['Admin', 'Manager'] },
-  { label: 'Engineering', to: '/engineer', icon: '🧑‍💻', roles: ['Admin','Manager','Engineer','Technician'] },
+  { label: 'Dashboard', to: '/engineer', icon: '📊', roles: ['Admin', 'Manager', 'Engineer', 'Technician'] },
+  { label: 'Projects', to: '/engineer/projects', icon: '🧭', roles: ['Admin', 'Manager', 'Engineer', 'Technician'] },
+  { label: 'Work Orders', to: '/engineer/work', icon: '🛠️', roles: ['Admin', 'Manager', 'Engineer', 'Technician'] },
+  { label: 'Quality', to: '/engineer/quality', icon: '✅', roles: ['Admin', 'Manager', 'Engineer', 'Technician'] },
+  { label: 'Company Files', to: '/engineer/documents', icon: '📦', roles: ['Admin', 'Manager', 'Engineer', 'Technician'] },
+  { label: 'Messages', to: '/engineer/messages', icon: '💬', roles: ['Admin', 'Manager', 'Engineer', 'Technician'] },
 ]
 
 // Small, dependency-free class join helper
@@ -207,7 +198,7 @@ function BottomNavItem({ to, icon, label }: { to: string; icon: string; label: s
   )
 }
 
-export default function AppShell() {
+export default function EngineerShell() {
   const navigate = useNavigate()
   const location = useLocation()
   const { hasRole, logout, user } = useAuth()
@@ -216,7 +207,7 @@ export default function AppShell() {
 
   const visibleNavItems = React.useMemo(
     () =>
-      navItems.filter((item) => {
+      engineerNavItems.filter((item) => {
         if (!item.roles) return true
         return item.roles.some((role) => hasRole(role))
       }),
@@ -224,7 +215,7 @@ export default function AppShell() {
   )
 
   const currentTitle =
-    visibleNavItems.find((item) => location.pathname.startsWith(item.to))?.label ?? 'ALINE'
+    visibleNavItems.find((item) => location.pathname.startsWith(item.to))?.label ?? 'Engineering Portal'
 
   // Close drawer when route changes (feels polished)
   React.useEffect(() => {
@@ -269,13 +260,13 @@ export default function AppShell() {
         aria-label="Mobile navigation"
       >
         <div className="flex items-center justify-between px-4 py-4">
-              <div className="flex items-center gap-3">
-              <BrandMark />
-              <div>
-              <div className="text-sm font-semibold text-slate-900">AutoDev</div>
-              <div className="text-xs text-slate-500">Automation Development Platform</div>
+          <div className="flex items-center gap-3">
+            <BrandMark />
+            <div>
+              <div className="text-sm font-semibold text-slate-900">Engineering Portal</div>
+              <div className="text-xs text-slate-500">Specialized engineering tools</div>
             </div>
-            </div>
+          </div>
 
           <button
             className="grid h-10 w-10 place-items-center rounded-xl border border-slate-200 text-slate-700 active:scale-[0.98]"
@@ -296,14 +287,17 @@ export default function AppShell() {
             {visibleNavItems.map((item) => (
               <React.Fragment key={item.to}>
                 <NavItem to={item.to} icon={item.icon} label={item.label} />
-                {item.to === '/documents' && (
-                  <div className="ml-10 text-xs text-slate-500">Documents, contracts, specs</div>
-                )}
               </React.Fragment>
             ))}
           </nav>
 
           <div className="mt-5 grid gap-2">
+            <button
+              className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-700 transition hover:bg-slate-50 active:scale-[0.98]"
+              onClick={() => navigate('/dashboard')}
+            >
+              Back to Main Interface
+            </button>
             <button
               className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-700 transition hover:bg-slate-50 active:scale-[0.98]"
               onClick={() => {
@@ -323,19 +317,16 @@ export default function AppShell() {
           <div className="rounded-2xl bg-white p-4 shadow-sm ring-1 ring-slate-900/10">
             <div className="flex items-center gap-3">
               <BrandMark />
-            <div>
-              <div className="text-sm font-semibold text-slate-900">AutoDev</div>
-              <div className="text-xs text-slate-500">Automation Development Platform</div>
-            </div>
+              <div>
+                <div className="text-sm font-semibold text-slate-900">Engineering Portal</div>
+                <div className="text-xs text-slate-500">Specialized engineering tools</div>
+              </div>
             </div>
 
             <nav className="mt-4 space-y-1">
               {visibleNavItems.map((item) => (
                 <React.Fragment key={item.to}>
                   <NavItem to={item.to} icon={item.icon} label={item.label} />
-                  {item.to === '/documents' && (
-                    <div className="ml-10 text-xs text-slate-500">Documents, contracts, specs</div>
-                  )}
                 </React.Fragment>
               ))}
             </nav>
@@ -346,15 +337,15 @@ export default function AppShell() {
             <div className="mt-2 flex gap-2">
               <button
                 className="flex-1 rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-700 transition hover:bg-slate-50 active:scale-[0.98]"
-                onClick={() => navigate('/documents')}
+                onClick={() => navigate('/engineer/projects')}
               >
-                Upload Company Files
+                New Project
               </button>
               <button
                 className="flex-1 rounded-xl bg-slate-900 px-3 py-2 text-sm font-semibold text-white transition hover:bg-slate-800 active:scale-[0.98]"
-                onClick={() => navigate('/inbox')}
+                onClick={() => navigate('/engineer/work')}
               >
-                Review Tasks
+                View Work Orders
               </button>
             </div>
           </div>
@@ -389,7 +380,12 @@ export default function AppShell() {
                     {user?.name || user?.email || 'User'}
                   </div>
 
-                  <NotificationBadge />
+                  <button
+                    className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-700 transition hover:bg-slate-50 active:scale-[0.98]"
+                    onClick={() => navigate('/dashboard')}
+                  >
+                    Back to Main
+                  </button>
 
                   <button
                     className="rounded-xl bg-slate-900 px-3 py-2 text-sm font-semibold text-white transition hover:bg-slate-800 active:scale-[0.98]"
@@ -409,10 +405,6 @@ export default function AppShell() {
           <main className="flex-1 px-3 pb-24 pt-4 md:px-4 md:pb-6">
             <div className="rounded-2xl bg-white p-4 shadow-sm ring-1 ring-slate-900/10 md:p-6">
               <Outlet />
-            </div>
-
-            <div className="mt-4">
-              <PermissionDebugPanel />
             </div>
           </main>
 

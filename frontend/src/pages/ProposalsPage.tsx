@@ -30,22 +30,22 @@ export default function ProposalsPage() {
   }, [status])
 
   return (
-    <div className="space-y-6">
-      <div className="flex flex-wrap items-center justify-between gap-4">
-        <div>
+      <div className="space-y-6">
+        <div className="flex flex-wrap items-center justify-between gap-4">
+          <div>
           <h1 className="text-2xl font-semibold text-slate-900">Automation Proposals</h1>
-          <p className="text-sm text-slate-500">Review and approve automation development actions.</p>
+          <p className="text-sm text-slate-500">Review and approve automation development project proposals.</p>
+          </div>
+          <select
+            className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm"
+            value={status}
+            onChange={(event) => setStatus(event.target.value)}
+          >
+            <option value="pending">Pending</option>
+            <option value="approved">Approved</option>
+            <option value="rejected">Rejected</option>
+          </select>
         </div>
-        <select
-          className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm"
-          value={status}
-          onChange={(event) => setStatus(event.target.value)}
-        >
-          <option value="pending">Pending</option>
-          <option value="approved">Approved</option>
-          <option value="rejected">Rejected</option>
-        </select>
-      </div>
       <Card className="overflow-hidden">
         <Table>
           <TableHeader>

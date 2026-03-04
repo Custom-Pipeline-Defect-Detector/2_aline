@@ -205,20 +205,20 @@ export default function CustomersPage() {
         <Link className="hover:text-slate-600" to="/dashboard">
           Dashboard
         </Link>{' '}
-        / Customers
+        / Automation Clients
       </div>
 
       <div className="flex flex-wrap items-center justify-between gap-4">
         <div>
           <div className="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-white px-3 py-1 text-xs font-semibold text-slate-700 shadow-sm">
             <span className="h-2 w-2 rounded-full bg-sky-400 shadow-[0_0_10px_rgba(56,189,248,0.75)]" />
-            CRM
+            Automation CRM
           </div>
           <h1 className="mt-3 text-2xl font-semibold text-slate-900">Automation Clients</h1>
           <p className="mt-1 text-sm text-slate-500">Track automation development client health and active projects.</p>
         </div>
 
-        <Button onClick={() => setShowNewCustomer(true)}>New Customer</Button>
+        <Button onClick={() => setShowNewCustomer(true)}>New Client</Button>
       </div>
 
       {loadingCustomers ? <div className="text-xs text-slate-500">Refreshing customers…</div> : null}

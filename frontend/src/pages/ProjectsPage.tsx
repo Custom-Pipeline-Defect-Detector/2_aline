@@ -112,15 +112,15 @@ export default function ProjectsPage() {
 
         <div className="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-white px-3 py-1 text-xs font-semibold text-slate-700 shadow-sm">
           <span className="h-2 w-2 rounded-full bg-sky-400 shadow-[0_0_10px_rgba(56,189,248,0.75)]" />
-          Delivery Tracker
+          Automation Projects
         </div>
       </div>
 
       {/* Header */}
       <div className="flex flex-wrap items-start justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-semibold text-slate-900">Projects</h1>
-          <p className="mt-1 text-sm text-slate-500">Track delivery health and upcoming milestones.</p>
+          <h1 className="text-2xl font-semibold text-slate-900">Automation Projects</h1>
+          <p className="mt-1 text-sm text-slate-500">Track automation project health and upcoming milestones.</p>
         </div>
 
         <div className="flex items-center gap-2">
@@ -284,12 +284,12 @@ export default function ProjectsPage() {
                     <Badge variant="info">{project.stage}</Badge>
                   </TableCell>
                   <TableCell>
-                    <Badge variant={healthVariant(project.health)} dot>
+                    <Badge variant={healthVariant(project.health)}>
                       {project.health}
                     </Badge>
                   </TableCell>
                   <TableCell>
-                    <Badge variant={riskVariant(project.risk)} dot>
+                    <Badge variant={riskVariant(project.risk)}>
                       {project.risk ?? 'low'}
                     </Badge>
                   </TableCell>
@@ -345,7 +345,7 @@ export default function ProjectsPage() {
                     </div>
 
                     <div className="shrink-0 text-right">
-                      <Badge variant={healthVariant(p.health)} dot>
+                      <Badge variant={healthVariant(p.health)}>
                         {p.health}
                       </Badge>
                       <div className="mt-2">

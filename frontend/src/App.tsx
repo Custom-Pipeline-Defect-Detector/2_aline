@@ -1,8 +1,10 @@
 import React from 'react';
 import { Navigate, Route, Routes } from 'react-router-dom'
 import AppShell from './components/AppShell'
+import EngineerShell from './components/EngineerShell'
 import ErrorBoundary from './components/ErrorBoundary'
 import RequireAuth from './components/RequireAuth'
+import RequireRoles from './components/RequireRoles';
 import LoginPage from './pages/LoginPage'
 import RegisterPage from './pages/RegisterPage'
 import DashboardPage from './pages/DashboardPage'
@@ -24,7 +26,7 @@ import MessagesPage from './pages/MessagesPage'
 import SearchPage from './pages/SearchPage'
 import DocumentProcessingPage from './pages/DocumentProcessingPage';
 import AiAssistantPage from './pages/AiAssistantPage';
-import RequireRoles from './components/RequireRoles';
+import EngineerHomePage from './pages/EngineerHomePage';
 import { ToastContainer } from 'react-toastify';
 import 'react-toastify/dist/ReactToastify.css';
 
@@ -55,6 +57,14 @@ export default function App() {
             <Route path="/processing" element={<ErrorBoundary><DocumentProcessingPage /></ErrorBoundary>} />
             <Route path="/ai-assistant" element={<ErrorBoundary><AiAssistantPage /></ErrorBoundary>} />
             <Route path="/status" element={<RequireRoles roles={["Admin", "Manager"]}><ErrorBoundary><StatusPage /></ErrorBoundary></RequireRoles>} />
+          </Route>
+          <Route path="/engineer" element={<RequireRoles roles={["Admin","Manager","Engineer","Technician"]}><EngineerShell /></RequireRoles>}>
+            <Route index element={<ErrorBoundary><EngineerHomePage /></ErrorBoundary>} />
+            <Route path="projects" element={<ErrorBoundary><ProjectsPage /></ErrorBoundary>} />
+            <Route path="work" element={<ErrorBoundary><WorkPage /></ErrorBoundary>} />
+            <Route path="quality" element={<ErrorBoundary><QualityPage /></ErrorBoundary>} />
+            <Route path="documents" element={<ErrorBoundary><DocumentsPage /></ErrorBoundary>} />
+            <Route path="messages" element={<ErrorBoundary><MessagesPage /></ErrorBoundary>} />
           </Route>
         </Route>
         <Route path="/forbidden" element={<ForbiddenPage />} />
